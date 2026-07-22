@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PD 局放在线监测系统</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <section class="login-view" id="loginView" aria-labelledby="loginTitle">
+    <div class="login-card">
+      <div class="login-brand" aria-hidden="true">PD</div>
+      <p class="login-kicker">HYDRO GENERATOR MONITORING</p>
+      <h1 id="loginTitle">局放在线监测系统</h1>
+      <p class="login-intro">面向水轮发电机组的智能绝缘状态监测平台</p>
+      <form class="login-form" id="loginForm" novalidate>
+        <div class="login-field">
+          <label for="loginUsername">账户</label>
+          <input id="loginUsername" name="username" type="text" autocomplete="username" required autofocus>
+        </div>
+        <div class="login-field">
+          <label for="loginPassword">密码</label>
+          <div class="password-field">
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+            <button class="password-toggle" id="passwordToggle" type="button" aria-label="显示密码" aria-pressed="false">显示</button>
+          </div>
+        </div>
+        <p class="login-error" id="loginError" role="alert" aria-live="polite"></p>
+        <button class="login-submit" type="submit">登录系统</button>
+      </form>
+      <p class="login-footnote">本地演示环境 · 数据不会上传至外部服务</p>
+    </div>
+  </section>
+
+  <div class="app-shell" id="appShell" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">⌂</div>
+        <div class="brand-text">PD 局放在线监测系统</div>
+      </div>
+      <nav class="main-nav" id="mainNav">
+        <button class="nav-btn active" data-page="dashboard">实时监测驾驶舱</button>
+        <button class="nav-btn" data-page="history">历史数据分析</button>
+        <button class="nav-btn" data-page="trend">长周期趋势分析</button>
+        <button class="nav-btn" data-page="diagnosis">智能诊断中心</button>
+        <button class="nav-btn" data-page="processing">数据处理</button>
+        <button class="nav-btn" data-page="alarm">报警管理</button>
+        <button class="nav-btn" data-page="device">设备管理</button>
+        <button class="nav-btn" data-page="system">系统设置</button>
+      </nav>
+      <div class="top-actions">
+        <span id="clock">2025-05-20 14:35:42</span>
+        <span class="divider"></span>
+        <span class="user-dot">●</span>
+        <span>admin</span>
+        <button class="icon-btn alarm-bell" id="alarmBell" type="button" aria-label="未处理报警" title="未处理报警">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+          <span class="alarm-badge" id="alarmBadge" hidden></span>
+        </button>
+        <button class="icon-btn" id="fullscreenBtn" type="button" title="全屏" aria-label="进入全屏">⛶</button>
+        <button class="logout-btn" id="logoutBtn" type="button">退出</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="page active" id="dashboard">
+        <div class="title-ribbon"><span>实时监测驾驶舱</span></div>
+        <div class="dashboard-grid">
+          <section class="panel unit-panel">
+            <div class="panel-title">机组概览面板</div>
+            <div class="unit-cards">
+              <article class="unit-card normal" data-unit-index="0" tabindex="0" role="button">
+                <div class="unit-head"><strong>1# 机组</strong><span>正常</span></div>
+                <small>Qm (pC)</small>
+                <div class="metric">125.6</div>
+                <canvas class="spark" data-seed="1"></canvas>
+              </article>
+              <article class="unit-card warn" data-unit-index="1" tabindex="0" role="button">
+                <div class="unit-head"><strong>2# 机组</strong><span>注意</span></div>
+                <small>Qm (pC)</small>
+                <div class="metric">356.8</div>
+                <canvas class="spark" data-seed="2"></canvas>
+              </article>
+              <article class="unit-card danger selected" data-unit-index="2" tabindex="0" role="button">
+                <div class="unit-head"><strong>3# 机组</strong><span>异常</span></div>
+                <small>Qm (pC)</small>
+                <div class="metric">1,245.3</div>
+                <canvas class="spark" data-seed="3"></canvas>
+              </article>
+              <article class="unit-card normal" data-unit-index="3" tabindex="0" role="button">
+                <div class="unit-head"><strong>4# 机组</strong><span>正常</span></div>
+                <small>Qm (pC)</small>
+                <div class="metric">98.7</div>
+                <canvas class="spark" data-seed="4"></canvas>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel prpd-panel">
+            <div class="panel-title row">
+              <span>PRPD实时图谱监测</span>
+              <div class="toolbar">
+                <label>通道选择：<select id="dashboardChannel"><option>3#-A相</option><option>3#-B相</option></select></label>
+                <label>频率：<input value="50.00 Hz"></label>
+                <button class="tool" id="prpdInspectBtn" type="button" title="查看图谱摘要">⌕</button><button class="tool" id="prpdZoomBtn" type="button" title="放大图谱">＋</button><button class="tool" id="prpdResetBtn" type="button" title="复位图谱">□</button>
+              </div>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="prpdChart"></canvas>
+              <div class="floating-card">
+                <strong>3# 机组 详细摘要</strong>
+                <dl>
+                  <dt>运行状态：</dt><dd>异常</dd>
+                  <dt>最大放电量 Qm：</dt><dd>1,245.3 pC</dd>
+                  <dt>平均放电量 Qavg：</dt><dd>245.6 pC</dd>
+                  <dt>趋势斜率 β：</dt><dd>0.85 pC/h</dd>
+                </dl>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel gauges-panel">
+            <div class="panel-title">特征量数字仪表盘</div>
+            <div class="gauge-grid">
+              <div class="gauge" data-value="82" data-label="最大放电量 Qm (pC)" data-num="1,245.3"></div>
+              <div class="gauge" data-value="76" data-label="平均放电量 Qavg (pC)" data-num="245.6"></div>
+              <div class="gauge" data-value="72" data-label="每秒总脉冲数 Ntotal (N/s)" data-num="12,345"></div>
+              <div class="gauge" data-value="66" data-label="趋势斜率 β (pC/h)" data-num="0.85"></div>
+            </div>
+            <div class="legend"><span class="ok"></span>正常 <span class="warn"></span>注意 <span class="bad"></span>异常 <span class="risk"></span>危险</div>
+          </section>
+
+          <section class="panel prps-panel">
+            <div class="panel-title row">
+              <span>PRPS 3D时序图谱</span>
+              <div class="toolbar"><label>数据周期：<select><option>最近200个周期</option></select></label><input id="prpsRange" type="range" min="0" max="100" value="72"></div>
+            </div>
+            <canvas id="prpsChart"></canvas>
+            <p class="hint">提示：红色区域表示放电具有较高的时间连续性，蓝色区域可能为随机噪声。</p>
+          </section>
+
+          <section class="panel alarm-panel">
+            <div class="panel-title">告警状态面板</div>
+            <div class="tabs dashboard-alarm-tabs"><button class="active" data-alarm-filter="all">全部</button><button data-alarm-filter="open">未确认 <b id="dashboardOpenAlarmCount">0</b></button><button data-alarm-filter="done">已确认</button></div>
+            <p class="alarm-filter-hint" id="dashboardAlarmHint">当前显示：全部告警</p>
+            <table class="data-table">
+              <thead><tr><th>时间戳</th><th>级别</th><th>告警内容</th></tr></thead>
+              <tbody id="alarmRows"></tbody>
+            </table>
+            <button class="primary wide" id="goAlarmBtn">查看全部告警 ›</button>
+          </section>
+        </div>
+      </section>
+
+      <aside class="device-tree collapsed" id="deviceTreePanel" aria-label="设备导航" hidden>
+        <div class="device-tree-head">
+          <button class="device-tree-toggle" id="deviceTreeToggle" type="button" aria-expanded="false" title="展开设备树">☷</button>
+          <strong>设备导航</strong>
+        </div>
+        <div class="device-tree-body">
+          <input id="deviceTreeSearch" type="search" placeholder="搜索机组、设备或通道" aria-label="搜索设备">
+          <label class="device-multi"><input id="deviceTreeMulti" type="checkbox"> 多通道选择</label>
+          <div class="device-tree-nodes" id="deviceTreeNodes"></div>
+        </div>
+        <div class="device-tree-summary"><b>3#</b><span>A相</span></div>
+      </aside>
+      <div class="operation-toast" id="operationToast" role="status" aria-live="polite" hidden></div>
+
+      <section class="page device-context-page" id="history" data-device-page="history">
+        <p class="device-path" id="currentDevicePath" data-device-path>灵昆水电站 / 3#机组 / 水轮发电机 / A相 UHF</p>
+        <div class="title-ribbon history-title-actions">
+          <span>历史数据分析</span>
+          <small id="historyNotice">请选择历史记录进行回放或查看详情。</small>
+          <div class="export-dropdown history-export">
+            <button class="primary" id="exportToggle">导出数据 ▾</button>
+            <div class="export-menu" id="exportMenu"></div>
+          </div>
+        </div>
+        <div class="history-grid">
+          <section class="panel history-playback-panel">
+            <div class="panel-title">历史PRPD图谱回放</div>
+            <div class="form-line">
+              <label>时间范围<input value="2025-05-19 00:00 ~ 2025-05-20 23:59"></label>
+              <label>机组/通道<select id="historyUnitChannelFilter"><option>全部机组</option><option>3#机组 A相</option><option>3#机组 B相</option><option>4#机组 A相</option><option>2#机组 C相</option><option>1#机组 B相</option></select></label>
+              <label>告警级别<select id="historyLevelFilter"><option>全部级别</option><option>正常</option><option>注意</option><option>异常</option></select></label>
+              <button class="primary" id="historyQueryBtn" type="button">查询</button><button class="ghost" id="historyResetBtn" type="button">重置</button>
+            </div>
+            <table class="data-table">
+              <thead><tr><th>时间戳</th><th>机组</th><th>通道</th><th>Qm</th><th>Qavg</th><th>Ntotal</th><th>级别</th><th>操作</th></tr></thead>
+              <tbody id="historyRows"></tbody>
+            </table>
+          </section>
+          <section class="panel">
+            <div class="panel-title row"><span>PRPD图谱回放</span><div class="toolbar"><button class="tool" id="historyPlayBtn" type="button" title="播放">▶</button><button class="tool" id="historyPauseBtn" type="button" title="暂停">◼</button><select id="historySpeed" aria-label="回放速度"><option>1x</option><option>2x</option></select></div></div>
+            <canvas id="historyPrpd"></canvas>
+          </section>
+          <section class="panel history-wave-panel">
+            <div class="panel-title row"><span>原始脉冲波形查询</span></div>
+            <div class="wave-grid">
+              <canvas id="waveChart"></canvas>
+              <div class="mini-table"><h4>脉冲列表</h4><div class="pulse-list" id="pulseList"></div></div>
+              <div class="param-card" id="pulseParams"><h4>脉冲参数</h4></div>
+              <canvas id="fftChart"></canvas>
+            </div>
+          </section>
+          <section class="panel export-panel compact-export">
+            <p class="export-note" id="exportNote">选择导出类型后生成对应数据包。</p>
+          </section>
+        </div>
+      </section>
+
+      <section class="page device-context-page" id="trend" data-device-page="trend">
+        <p class="device-path" data-device-path>灵昆水电站 / 3#机组 / 水轮发电机 / A相 UHF</p>
+        <div class="title-ribbon"><span>长周期趋势分析</span></div>
+        <div class="trend-grid">
+          <section class="panel">
+            <div class="panel-title row"><span>多变量耦合趋势图</span><div class="toolbar"><select id="trendUnitSelect" aria-label="趋势机组"><option>1# 机组</option><option>2# 机组</option><option selected>3# 机组</option><option>4# 机组</option></select><select id="trendChannelSelect" aria-label="趋势通道"><option>A相</option><option>B相</option><option>C相</option></select><button class="ghost" id="exportTrendChartBtn" type="button">导出数据</button></div></div>
+            <p class="panel-context" id="trendTargetSummary">当前分析：3# 机组 / A相 · 最近 90 天</p>
+            <canvas id="multiTrend"></canvas>
+          </section>
+          <section class="panel threshold-panel" aria-labelledby="thresholdPanelTitle">
+            <div class="panel-title row">
+              <span id="thresholdPanelTitle">阈值管理配置</span>
+              <button class="ghost compact-button" id="restoreThresholdDefaults" type="button">恢复默认</button>
+            </div>
+            <div class="tabs threshold-tabs" role="tablist" aria-label="阈值管理类型">
+              <button class="active" id="thresholdsTab" type="button" role="tab" aria-selected="true" aria-controls="thresholdsPanel" data-threshold-tab="thresholds">阈值配置</button>
+              <button id="agingTab" type="button" role="tab" aria-selected="false" aria-controls="agingPanel" data-threshold-tab="aging">老化系数</button>
+              <button id="irisTab" type="button" role="tab" aria-selected="false" aria-controls="irisPanel" data-threshold-tab="iris">IRIS 基准</button>
+            </div>
+            <div class="threshold-summary" aria-live="polite">
+              <span>当前机组：<b id="trendCurrentUnit">3# 机组</b></span>
+              <span>当前老化系数：<b id="currentAgingFactor">1.20</b></span>
+              <span>当前阈值：<b id="currentThresholdSummary">0.30 / 1.00 / 3.00 pC</b></span>
+            </div>
+            <p class="threshold-message" id="thresholdMessage" role="alert" aria-live="polite"></p>
+
+            <section class="threshold-tab-panel" id="thresholdsPanel" role="tabpanel" aria-labelledby="thresholdsTab" data-threshold-panel="thresholds">
+              <form id="thresholdForm" class="threshold-form" novalidate>
+                <label>注意阈值（pC）<input id="thresholdAttention" name="attention" type="number" min="0" step="0.01" required></label>
+                <label>异常阈值（pC）<input id="thresholdAbnormal" name="abnormal" type="number" min="0" step="0.01" required></label>
+                <label>危险阈值（pC）<input id="thresholdDanger" name="danger" type="number" min="0" step="0.01" required></label>
+                <button class="primary" type="submit">保存配置</button>
+              </form>
+              <div class="threshold-range-preview" id="thresholdRangePreview"></div>
+            </section>
+
+            <section class="threshold-tab-panel" id="agingPanel" role="tabpanel" aria-labelledby="agingTab" data-threshold-panel="aging" hidden>
+              <div class="threshold-toolbar"><span>按机组和设备类型维护修正系数</span><button class="primary" id="addAgingFactor" type="button">新增系数</button></div>
+              <div class="threshold-table-wrap">
+                <table class="data-table"><thead><tr><th>机组</th><th>设备类型</th><th>系数</th><th>更新时间</th><th>操作</th></tr></thead><tbody id="agingRows"></tbody></table>
+              </div>
+            </section>
+
+            <section class="threshold-tab-panel" id="irisPanel" role="tabpanel" aria-labelledby="irisTab" data-threshold-panel="iris" hidden>
+              <div class="threshold-toolbar">
+                <label>设备类型<select id="irisDeviceFilter"><option value="all">全部类型</option></select></label>
+                <div class="threshold-toolbar-actions">
+                  <label class="ghost file-button" for="irisImport" tabindex="0" role="button">导入 JSON</label>
+                  <input id="irisImport" type="file" accept="application/json,.json">
+                  <button class="primary" id="addIrisBenchmark" type="button">新增基准</button>
+                </div>
+              </div>
+              <div class="threshold-table-wrap">
+                <table class="data-table"><thead><tr><th>基准名称</th><th>设备类型</th><th>注意</th><th>异常</th><th>危险</th><th>更新时间</th><th>操作</th></tr></thead><tbody id="irisRows"></tbody></table>
+              </div>
+            </section>
+          </section>
+          <section class="panel span-2">
+            <div class="panel-title row"><span>趋势斜率预警分析</span><span class="status warn-text" id="trendSlopeLabel">当前窗口β：0.59 pC/天</span></div>
+            <canvas id="slopeTrend"></canvas>
+          </section>
+          <section class="panel trend-summary-panel">
+            <div class="panel-title">趋势分析统计摘要</div>
+            <table class="data-table"><thead><tr><th>通道</th><th>当前值</th><th>90天前</th><th>斜率β</th><th>等级</th><th>劣化评估</th></tr></thead><tbody id="trendSummaryRows"></tbody></table>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="diagnosis">
+        <div class="title-ribbon"><span>智能诊断中心</span></div>
+        <div class="diagnosis-grid">
+          <section class="panel auto-panel diagnosis-control">
+            <div class="panel-title row"><span>一键自动诊断</span><span class="status" id="diagStage">待启动</span></div>
+            <div class="diag-control-body">
+              <div class="diag-control-left">
+                <div class="diag-target-form">
+                  <label>机组<select id="diagUnitSelect"><option>3# 机组</option><option>1# 机组</option><option>2# 机组</option><option>4# 机组</option></select></label>
+                  <label>通道<select id="diagChannelSelect"><option>A相</option><option>B相</option><option>C相</option></select></label>
+                </div>
+                <button class="diagnose-button" id="startDiagnosis">启动专家诊断<br><small id="diagTime">0.00 s</small></button>
+                <div class="info-block diag-freeze-info">
+                  <p>机组：<b id="diagUnitText">3# 机组</b></p>
+                  <p>通道：<b id="diagChannelText">A相</b></p>
+                  <p>数据量：<b id="diagWindowText">最近1000个工频周期</b></p>
+                  <p>冻结时间：<b>2025-05-20 14:32:18</b></p>
+                </div>
+              </div>
+              <div class="diagnosis-progress">
+                <div class="pipeline"><span>特征分析</span><i></i><span>CNN-Transformer</span><i></i><span>模糊匹配</span><i></i><span>生成报告</span></div>
+                <div class="progress"><span id="diagProgressBar" style="width:0%"></span></div>
+                <p id="diagStatus">请选择诊断对象后启动专家诊断。</p>
+              </div>
+            </div>
+          </section>
+          <section class="panel diagnosis-radar">
+            <div class="panel-title">特征雷达因子分析</div>
+            <div class="radar-analysis">
+              <div class="radar-legend">
+                <span><i class="line-current"></i>当前放电特征</span>
+                <span><i class="line-slot"></i>槽部放电（模板）</span>
+                <span><i class="line-end"></i>端部放电（模板）</span>
+                <span><i class="line-cavity"></i>内部气隙放电（模板）</span>
+              </div>
+              <div class="radar-body">
+                <canvas id="radarChart"></canvas>
+                <aside class="radar-metrics">
+                  <h4>特征指标说明</h4>
+                  <p><b>相位对称性</b><span>正负半周放电分布的对称程度</span><em>当前 0.72 / 槽部 0.88</em></p>
+                  <p><b>幅值离散度</b><span>放电量峰值分布的离散特征</span><em>当前 0.74 / 槽部 0.82</em></p>
+                  <p><b>相位宽度</b><span>放电在相位域的覆盖范围</span><em>当前 0.66 / 槽部 0.86</em></p>
+                  <p><b>频谱特征</b><span>脉冲频域能量与模板匹配度</span><em>当前 0.86 / 槽部 0.70</em></p>
+                  <p><b>脉冲形状</b><span>上升沿、脉宽与尾部衰减相似度</span><em>当前 0.58 / 槽部 0.62</em></p>
+                </aside>
+              </div>
+            </div>
+          </section>
+          <section class="panel span-2 diagnosis-defects">
+            <div class="panel-title">缺陷概率排序面板</div>
+            <div class="defect-board">
+              <div class="defect-head"><span>排名</span><span>缺陷类型</span><span>匹配概率</span><span>操作</span></div>
+              <div class="defect-list" id="defectList"></div>
+              <div class="defect-expanded" id="defectCause">
+                <div class="cause-copy"><b>绝缘物理损伤成因分析（槽部放电）</b><ol><li>定子槽部绝缘存在局部电场畸变</li><li>槽内固定位移导致槽楔或涂层磨损</li><li>放电区域扩大后可能引发绝缘击穿</li></ol></div>
+                <div class="slot-schematic" aria-hidden="true"><span></span><i></i><em></em></div>
+              </div>
+            </div>
+          </section>
+          <section class="panel diagnosis-conclusion-panel">
+            <div class="panel-title">当前诊断结论</div>
+            <div class="conclusion" id="diagConclusion">导缺陷类型：槽部放电<br><small>严重程度：严重　置信度：88%</small></div>
+            <ul id="diagAdvice"><li>建议重点检查定子槽部绝缘状况。</li><li>加强槽部绝缘清洁，保持良好通风散热。</li></ul>
+          </section>
+          <section class="panel diagnosis-prpd">
+            <div class="panel-title">PRPD 图谱</div>
+            <canvas id="diagPrpd"></canvas>
+          </section>
+          <section class="panel diagnosis-report">
+            <div class="panel-title">诊断报告生成与导出</div>
+            <div class="report-workbench">
+              <div class="report-cover">
+                <b>PD 局部放电诊断报告</b>
+                <span id="diagReportTarget">3# 机组　A相通道</span>
+                <i></i>
+              </div>
+              <div class="report-checklist">
+                <b>报告内容预览</b>
+                <p>✓ 封面</p><p>✓ 目录</p><p>✓ 诊断概述</p><p>✓ 缺陷概率</p><p>✓ 诊断分析</p><p>✓ 诊断结果</p><p>✓ 趋势分析</p>
+              </div>
+              <div class="report-review">
+                <label>添加审核意见（可选）<textarea id="diagReviewNote" placeholder="请输入审核意见..."></textarea></label>
+                <label>审核人<select id="diagReviewer"><option>admin</option><option>engineer01</option></select></label>
+                <label>签名<input id="diagSignature" value="已签名"></label>
+                <label>日期<input id="diagReportDate" type="date" value="2026-07-20"></label>
+              </div>
+              <div class="report-actions">
+                <strong>导出报告</strong>
+                <button class="danger-btn" id="exportDiagPdf" type="button">下载报告（HTML）</button>
+                <button class="primary" id="previewDiagReport">预览报告</button>
+                <button class="primary" id="printDiagReport" type="button">打印报告</button>
+              </div>
+            </div>
+            <div class="diag-report-preview" id="diagReportPreview" hidden></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page device-context-page" id="processing" data-device-page="processing">
+        <p class="device-path" data-device-path>灵昆水电站 / 3#机组 / 水轮发电机 / A相 UHF</p>
+        <div class="title-ribbon"><span>数据处理</span></div>
+        <div class="processing-grid">
+          <section class="panel span-2">
+            <div class="panel-title row"><span>相位屏蔽窗管理</span><div class="toolbar"><select><option>3#机组 A相</option></select><button class="primary" id="addPhaseMaskBtn" type="button">新增屏蔽窗</button></div></div>
+            <div class="mask-grid"><canvas id="maskPrpd"></canvas><table class="data-table"><thead><tr><th>编号</th><th>起始</th><th>结束</th><th>原因</th><th>状态</th><th>操作</th></tr></thead><tbody id="phaseMaskRows"></tbody></table></div>
+          </section>
+          <section class="panel span-2">
+            <div class="panel-title">数字滤波器配置</div>
+            <div class="filter-grid"><div class="form-stack"><label>滤波器类型<select><option>FIR 等波纹滤波器</option></select></label><label>低截止频率<input id="filterLow" type="number" min="0" step="0.01" value="0.5"><span>MHz</span></label><label>高截止频率<input id="filterHigh" type="number" min="0" step="0.01" value="120"><span>MHz</span></label><label>阻带衰减目标<input id="filterAttenuation" type="number" min="1" step="1" value="80"><span>dB</span></label><label>采样带宽<input id="filterBandwidth" type="number" min="1" step="1" value="250"><span>MHz</span></label><p class="processing-result" id="filterResultSummary" role="status" aria-live="polite">当前配置：0.50–120.00 MHz，衰减 80 dB</p><button class="primary wide" id="applyFilterBtn" type="button">应用滤波器</button></div><canvas id="filterChart"></canvas></div>
+          </section>
+          <section class="panel span-2">
+            <div class="panel-title">PSA 脉冲形状聚类分析</div>
+            <div class="cluster-grid"><canvas id="clusterChart"></canvas><div class="cluster-legend"><p><span class="dot red"></span>簇1 (PD)</p><p><span class="dot yellow"></span>簇2 (干扰)</p><p><span class="dot cyan"></span>簇3 (干扰)</p></div><table class="data-table"><tbody><tr><td>1</td><td>12,845</td><td>PD</td></tr><tr><td>2</td><td>9,623</td><td>干扰</td></tr><tr><td>3</td><td>8,912</td><td>干扰</td></tr></tbody></table></div>
+          </section>
+          <section class="panel span-2">
+            <div class="panel-title">频谱分析工具</div>
+            <div class="spectrum-grid"><canvas id="spectrumChart"></canvas><canvas id="waterfallChart"></canvas></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="alarm">
+        <div class="title-ribbon"><span>报警管理</span></div>
+        <div class="alarm-layout">
+          <section class="panel alarm-list-panel">
+            <div class="panel-title">告警事件列表</div>
+            <div class="form-line"><select id="alarmUnitFilter" aria-label="报警机组"><option value="all">全部机组</option><option>1# 机组</option><option>2# 机组</option><option>3# 机组</option><option>4# 机组</option><option>系统</option></select><select id="alarmLevelFilter" aria-label="报警等级"><option value="all">全部等级</option><option>注意</option><option>异常</option><option>危险</option><option>系统</option></select><select id="alarmStatusFilter" aria-label="报警状态"><option value="all">全部状态</option><option value="open">未确认</option><option value="done">已处置</option></select><button class="primary" id="alarmFilterBtn" type="button">查询</button></div>
+            <p class="alarm-management-hint" id="alarmManagementHint" role="status" aria-live="polite">当前显示：全部报警</p>
+            <table class="data-table"><thead><tr><th>告警编号</th><th>时间</th><th>级别</th><th>内容</th><th>状态</th></tr></thead><tbody id="alarmManageRows" tabindex="-1" aria-label="报警事件列表"></tbody></table>
+          </section>
+          <section class="panel alarm-detail-panel">
+            <div class="panel-title">告警处置详情</div>
+            <div class="info-block" id="alarmDetail"><p>请选择上方告警事件查看处置详情。</p></div>
+            <label class="alarm-dispatch-field">处理组<select id="alarmDispatchGroup"><option value="">请选择处理组</option><option>检修一组</option><option>检修二组</option><option>绝缘专业组</option></select></label>
+            <textarea id="alarmDispositionNote" placeholder="请输入处置意见..."></textarea>
+            <div class="alarm-actions"><button class="primary" id="confirmAlarmBtn" type="button">确认告警</button><button class="ghost" id="dispatchAlarmBtn" type="button">派发处理</button><button class="danger-btn" id="closeAlarmBtn" type="button">关闭告警</button></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="device">
+        <div class="title-ribbon"><span>设备管理</span></div>
+        <div class="device-layout">
+          <section class="panel">
+            <div class="panel-title">设备拓扑与通道</div>
+            <div class="topology">
+              <div>UHF传感器</div><i></i><div>同轴电缆</div><i></i><div>采集单元</div><i></i><div>工业交换机</div><i></i><div>服务器集群</div>
+            </div>
+            <table class="data-table"><thead><tr><th>通道ID</th><th>机组</th><th>名称</th><th>类型</th><th>采样率</th><th>状态</th></tr></thead><tbody id="deviceRows"></tbody></table>
+          </section>
+          <section class="panel">
+            <div class="panel-title">通道配置详情</div>
+            <div class="form-stack device-form"><label>传感器类型<select id="deviceType"><option>UHF</option><option>HFCT</option></select></label><label>通道名称<input id="deviceName" value="A相UHF"></label><label>校准系数<input id="deviceCalibration" type="number" min="0.01" step="0.01" value="0.85"></label><label>存储深度<input id="deviceDepth" type="number" min="1" step="1" value="1024"><span>Mpts</span></label><label>阻抗<input id="deviceImpedance" type="number" min="0.1" step="0.1" value="52.3"><span>Ω</span></label><button class="primary wide" id="saveDeviceConfig">保存配置</button></div>
+            <div class="toast" id="deviceToast">配置已保存，通道状态已刷新。</div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="system">
+        <div class="title-ribbon"><span>系统设置</span></div>
+        <div class="system-grid">
+          <aside class="side-menu"><button class="active" data-sys="selfcheck">硬件自检</button><button data-sys="config">硬件配置</button><button data-sys="users">用户管理</button><button data-sys="logs">系统日志</button></aside>
+          <section class="panel sys-pane active" id="sys-selfcheck">
+            <div class="panel-title row"><span>硬件自检</span><span id="selfCheckStatus">待启动</span></div>
+            <div class="topology tall"><div>#1 机组 UHF传感器</div><i></i><div>采集单元</div><i></i><div>工业交换机</div><i></i><div>服务器集群</div></div>
+            <div class="selfcheck-toolbar"><label><input id="selfCheckFailureMode" type="checkbox"> 模拟一项失败</label><button class="primary" id="startSelfCheckBtn" type="button">开始自检</button><button class="ghost" id="cancelSelfCheckBtn" type="button" disabled>取消</button><button class="ghost" id="retrySelfCheckBtn" type="button" disabled>重试</button></div>
+            <div class="progress"><span id="selfCheckProgress" style="width:0%"></span></div>
+            <table class="data-table"><tbody id="selfCheckRows"></tbody></table>
+          </section>
+          <section class="panel sys-pane" id="sys-config"><div class="panel-title">硬件配置</div><table class="data-table"><tbody><tr><td>CH01</td><td>3#机组</td><td>A相UHF</td><td>启用</td></tr><tr><td>CH02</td><td>3#机组</td><td>B相UHF</td><td>启用</td></tr></tbody></table></section>
+          <section class="panel sys-pane" id="sys-users"><div class="panel-title row"><span>用户管理</span><button class="primary" id="addDemoUserBtn" type="button">新增用户</button></div><p class="boundary-notice" id="demoUserNotice">前端权限演示：仅演示用户资料与启停状态，不改变固定 admin 登录；生产环境需接入认证与 RBAC 服务。</p><table class="data-table"><thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody id="demoUserRows"></tbody></table></section>
+          <section class="panel sys-pane" id="sys-logs">
+            <div class="panel-title row"><span>系统日志</span><button class="primary" id="exportSystemLogsBtn" type="button">导出 CSV</button></div>
+            <div class="form-line system-log-filters"><label>操作用户<select id="systemLogUserFilter"><option>全部用户</option></select></label><label>动作<select id="systemLogActionFilter"><option>全部动作</option></select></label><button class="primary" id="querySystemLogsBtn" type="button">查询</button></div>
+            <p class="panel-hint" id="systemLogHint" role="status">显示全部日志</p>
+            <div class="system-log-layout"><div class="table-scroll"><table class="data-table"><thead><tr><th>时间</th><th>操作用户</th><th>动作</th><th>摘要</th></tr></thead><tbody id="systemLogRows"></tbody></table></div><aside class="system-log-detail" id="systemLogDetail" tabindex="-1"><strong>日志详情</strong><p>选择一条日志查看完整信息。</p></aside></div>
+            <canvas id="healthChart"></canvas>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div class="confirm-dialog" id="confirmDialog" role="dialog" aria-modal="true" aria-labelledby="confirmDialogTitle" hidden>
+      <div class="confirm-dialog-card">
+        <h2 id="confirmDialogTitle">确认操作</h2>
+        <p id="confirmDialogMessage"></p>
+        <div class="modal-actions"><button class="ghost" id="confirmDialogCancel" type="button">取消</button><button class="danger-btn" id="confirmDialogAccept" type="button">确认</button></div>
+      </div>
+    </div>
+    <div class="confirm-dialog" id="deviceDirtyDialog" role="dialog" aria-modal="true" aria-labelledby="deviceDirtyTitle" hidden>
+      <div class="confirm-dialog-card">
+        <h2 id="deviceDirtyTitle">设备配置尚未保存</h2>
+        <p>请选择保存修改、放弃修改或取消本次切换。</p>
+        <div class="modal-actions"><button class="primary" id="deviceDirtySave" type="button">保存并继续</button><button class="danger-btn" id="deviceDirtyDiscard" type="button">放弃修改</button><button class="ghost" id="deviceDirtyCancel" type="button">取消</button></div>
+      </div>
+    </div>
+
+    <footer class="statusbar">
+      <span>系统状态：<b>运行中</b> <i></i></span>
+      <span>数据采集：<b>正常</b> <i></i></span>
+      <span>存储状态：<b>正常</b> <i></i></span>
+      <span>网络状态：<b>正常</b> <i></i></span>
+      <span id="lastDataUpdated">数据更新：刚刚</span>
+      <span class="stale-data-warning" id="staleDataWarning" role="status" hidden>数据可能已过期</span>
+      <span>© 2025 局放在线监测系统 V2.1.0</span>
+    </footer>
+  </div>
+
+  <div class="modal-backdrop" id="thresholdModal" role="dialog" aria-modal="true" aria-labelledby="thresholdModalTitle" hidden>
+    <div class="modal-card">
+      <div class="modal-heading"><h2 id="thresholdModalTitle">编辑配置</h2><button class="modal-close" id="thresholdModalClose" type="button" aria-label="关闭对话框">×</button></div>
+      <form id="thresholdModalForm" class="modal-form" novalidate>
+        <input id="thresholdRecordId" name="id" type="hidden">
+        <div id="agingModalFields">
+          <label for="agingUnit">机组</label><input id="agingUnit" name="unit" autocomplete="off">
+          <label for="agingDeviceType">设备类型</label><input id="agingDeviceType" name="agingDeviceType" autocomplete="off">
+          <label for="agingFactor">老化系数</label><input id="agingFactor" name="factor" type="number" min="0.01" step="0.01">
+        </div>
+        <div id="irisModalFields" hidden>
+          <label for="irisName">基准名称</label><input id="irisName" name="name" autocomplete="off">
+          <label for="irisDeviceType">设备类型</label><input id="irisDeviceType" name="deviceType" autocomplete="off">
+          <label for="irisAttention">注意阈值（pC）</label><input id="irisAttention" name="attention" type="number" min="0" step="0.01">
+          <label for="irisAbnormal">异常阈值（pC）</label><input id="irisAbnormal" name="abnormal" type="number" min="0" step="0.01">
+          <label for="irisDanger">危险阈值（pC）</label><input id="irisDanger" name="danger" type="number" min="0" step="0.01">
+        </div>
+        <p class="modal-error" id="thresholdModalError" role="alert"></p>
+        <div class="modal-actions"><button class="ghost" id="thresholdModalCancel" type="button">取消</button><button class="primary" type="submit">保存</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="phaseMaskModal" role="dialog" aria-modal="true" aria-labelledby="phaseMaskTitle" hidden>
+    <div class="modal-card">
+      <div class="modal-heading"><h2 id="phaseMaskTitle">新增相位屏蔽窗</h2><button class="modal-close" id="phaseMaskClose" type="button" aria-label="关闭对话框">×</button></div>
+      <form id="phaseMaskForm" class="modal-form" novalidate>
+        <input id="phaseMaskId" type="hidden">
+        <label for="phaseMaskStart">起始相位（°）</label><input id="phaseMaskStart" type="number" min="0" max="360" step="1" required>
+        <label for="phaseMaskEnd">结束相位（°）</label><input id="phaseMaskEnd" type="number" min="0" max="360" step="1" required>
+        <label for="phaseMaskReason">屏蔽原因</label><input id="phaseMaskReason" autocomplete="off" required>
+        <p class="modal-error" id="phaseMaskError" role="alert"></p>
+        <div class="modal-actions"><button class="ghost" id="phaseMaskCancel" type="button">取消</button><button class="primary" id="phaseMaskSave" type="submit">保存</button></div>
+      </form>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="demoUserModal" role="dialog" aria-modal="true" aria-labelledby="demoUserTitle" hidden><div class="modal-card"><div class="modal-heading"><h2 id="demoUserTitle">新增演示用户</h2><button class="modal-close" id="demoUserClose" type="button">×</button></div><form id="demoUserForm" class="modal-form" novalidate><input id="demoUserId" type="hidden"><label for="demoUsername">用户名</label><input id="demoUsername" autocomplete="off"><label for="demoUserRole">角色</label><select id="demoUserRole"><option>管理员</option><option>工程师</option><option>浏览者</option></select><label><input id="demoUserEnabled" type="checkbox" checked> 启用</label><p class="modal-error" id="demoUserError" role="alert"></p><div class="modal-actions"><button class="ghost" id="demoUserCancel" type="button">取消</button><button class="primary" type="submit">保存</button></div></form></div></div>
+  <script src="./core.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
