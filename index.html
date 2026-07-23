@@ -29,6 +29,7 @@
         <button class="login-submit" type="submit">登录系统</button>
       </form>
       <p class="login-footnote">本地演示环境 · 数据不会上传至外部服务</p>
+      <p class="prototype-boundary" role="note">本页为演示认证：停用演示用户不会改变固定 admin 登录；配置与本地日志保存在当前浏览器 localStorage，且本地日志可被修改，不能作为生产审计证据。生产环境必须接入后端身份认证、RBAC、会话控制、不可篡改审计与服务端持久化。</p>
     </div>
   </section>
 
@@ -63,6 +64,14 @@
     </header>
 
     <main>
+      <section class="measurement-trust-bar" id="measurementTrustBar" aria-label="测量可信状态">
+        <span>对象 <strong id="trustAssetId">channel-3-a</strong></span>
+        <span>校准 <strong id="trustCalibration">有效</strong></span>
+        <span>证书 <strong id="trustCertificate">CAL-PD-2025-003A</strong></span>
+        <span>质量 <strong id="trustQuality">Q1</strong></span>
+        <span>显示单位 <strong id="trustDisplayUnit">pC</strong></span>
+        <span>样例截止 <strong id="trustSampleAsOf">2025-05-20 14:32:18 UTC+8</strong></span>
+      </section>
       <section class="page active" id="dashboard">
         <div class="title-ribbon"><span>实时监测驾驶舱</span></div>
         <div class="dashboard-grid">
@@ -70,26 +79,26 @@
             <div class="panel-title">机组概览面板</div>
             <div class="unit-cards">
               <article class="unit-card normal" data-unit-index="0" tabindex="0" role="button">
-                <div class="unit-head"><strong>1# 机组</strong><span>正常</span></div>
-                <small>Qm (pC)</small>
+                <div class="unit-head"><strong>1# 机组</strong><span>数据受限</span></div>
+                <small>Qm (mV)</small>
                 <div class="metric">125.6</div>
                 <canvas class="spark" data-seed="1"></canvas>
               </article>
               <article class="unit-card warn" data-unit-index="1" tabindex="0" role="button">
-                <div class="unit-head"><strong>2# 机组</strong><span>注意</span></div>
-                <small>Qm (pC)</small>
+                <div class="unit-head"><strong>2# 机组</strong><span>数据受限</span></div>
+                <small>Qm (mV)</small>
                 <div class="metric">356.8</div>
                 <canvas class="spark" data-seed="2"></canvas>
               </article>
               <article class="unit-card danger selected" data-unit-index="2" tabindex="0" role="button">
-                <div class="unit-head"><strong>3# 机组</strong><span>异常</span></div>
+                <div class="unit-head"><strong>3# 机组</strong><span>危险</span></div>
                 <small>Qm (pC)</small>
                 <div class="metric">1,245.3</div>
                 <canvas class="spark" data-seed="3"></canvas>
               </article>
               <article class="unit-card normal" data-unit-index="3" tabindex="0" role="button">
-                <div class="unit-head"><strong>4# 机组</strong><span>正常</span></div>
-                <small>Qm (pC)</small>
+                <div class="unit-head"><strong>4# 机组</strong><span>数据受限</span></div>
+                <small>Qm (dBm)</small>
                 <div class="metric">98.7</div>
                 <canvas class="spark" data-seed="4"></canvas>
               </article>
@@ -110,10 +119,10 @@
               <div class="floating-card">
                 <strong>3# 机组 详细摘要</strong>
                 <dl>
-                  <dt>运行状态：</dt><dd>异常</dd>
+                  <dt>运行状态：</dt><dd>危险</dd>
                   <dt>最大放电量 Qm：</dt><dd>1,245.3 pC</dd>
                   <dt>平均放电量 Qavg：</dt><dd>245.6 pC</dd>
-                  <dt>趋势斜率 β：</dt><dd>0.85 pC/h</dd>
+                  <dt>趋势斜率 β：</dt><dd>0.85 pC/天</dd>
                 </dl>
               </div>
             </div>
@@ -125,7 +134,7 @@
               <div class="gauge" data-value="82" data-label="最大放电量 Qm (pC)" data-num="1,245.3"></div>
               <div class="gauge" data-value="76" data-label="平均放电量 Qavg (pC)" data-num="245.6"></div>
               <div class="gauge" data-value="72" data-label="每秒总脉冲数 Ntotal (N/s)" data-num="12,345"></div>
-              <div class="gauge" data-value="66" data-label="趋势斜率 β (pC/h)" data-num="0.85"></div>
+              <div class="gauge" data-value="66" data-label="趋势斜率 β (pC/天)" data-num="0.85"></div>
             </div>
             <div class="legend"><span class="ok"></span>正常 <span class="warn"></span>注意 <span class="bad"></span>异常 <span class="risk"></span>危险</div>
           </section>
@@ -180,11 +189,22 @@
           <section class="panel history-playback-panel">
             <div class="panel-title">历史PRPD图谱回放</div>
             <div class="form-line">
-              <label>时间范围<input value="2025-05-19 00:00 ~ 2025-05-20 23:59"></label>
-              <label>机组/通道<select id="historyUnitChannelFilter"><option>全部机组</option><option>3#机组 A相</option><option>3#机组 B相</option><option>4#机组 A相</option><option>2#机组 C相</option><option>1#机组 B相</option></select></label>
-              <label>告警级别<select id="historyLevelFilter"><option>全部级别</option><option>正常</option><option>注意</option><option>异常</option></select></label>
+              <div class="history-time-fields" role="group" aria-label="历史数据时间范围">
+                <label>开始时间<input id="historyStartTime" type="datetime-local" value="2025-05-19T00:00"></label>
+                <label>结束时间<input id="historyEndTime" type="datetime-local" value="2025-05-20T23:59"></label>
+                <div class="history-quick-ranges" aria-label="快捷时间范围">
+                  <button class="ghost" type="button" data-history-range-hours="24">样例近24小时</button>
+                  <button class="ghost" type="button" data-history-range-hours="168">样例近7天</button>
+                  <button class="ghost" type="button" data-history-range-hours="720">样例近30天</button>
+                </div>
+              </div>
+              <span class="form-hint" id="historyRangeAnchor">相对样例截止时间 2025-05-20 14:32:18（UTC+8）</span>
+              <label>机组/通道<select id="historyUnitChannelFilter"><option>全部机组</option><option>3#机组 A相</option><option>3#机组 B相</option><option>3#机组 C相</option><option>4#机组 A相</option><option>2#机组 B相</option><option>1#机组 B相</option></select></label>
+              <label>告警级别<select id="historyLevelFilter"><option>全部级别</option><option>正常</option><option>注意</option><option>异常</option><option>危险</option><option>数据受限</option></select></label>
               <button class="primary" id="historyQueryBtn" type="button">查询</button><button class="ghost" id="historyResetBtn" type="button">重置</button>
             </div>
+            <p id="historyRangeError" class="field-error" role="alert" hidden></p>
+            <p id="historyRangeSummary" class="helper-text">时间按 UTC+8（Asia/Shanghai）查询，单次最多 90 天。</p>
             <table class="data-table">
               <thead><tr><th>时间戳</th><th>机组</th><th>通道</th><th>Qm</th><th>Qavg</th><th>Ntotal</th><th>级别</th><th>操作</th></tr></thead>
               <tbody id="historyRows"></tbody>
@@ -316,11 +336,11 @@
                 <canvas id="radarChart"></canvas>
                 <aside class="radar-metrics">
                   <h4>特征指标说明</h4>
-                  <p><b>相位对称性</b><span>正负半周放电分布的对称程度</span><em>当前 0.72 / 槽部 0.88</em></p>
-                  <p><b>幅值离散度</b><span>放电量峰值分布的离散特征</span><em>当前 0.74 / 槽部 0.82</em></p>
-                  <p><b>相位宽度</b><span>放电在相位域的覆盖范围</span><em>当前 0.66 / 槽部 0.86</em></p>
-                  <p><b>频谱特征</b><span>脉冲频域能量与模板匹配度</span><em>当前 0.86 / 槽部 0.70</em></p>
-                  <p><b>脉冲形状</b><span>上升沿、脉宽与尾部衰减相似度</span><em>当前 0.58 / 槽部 0.62</em></p>
+                  <p><b>相位对称性</b><span>正负半周放电分布的对称程度</span><em>待诊断</em></p>
+                  <p><b>幅值离散度</b><span>放电量峰值分布的离散特征</span><em>待诊断</em></p>
+                  <p><b>相位宽度</b><span>放电在相位域的覆盖范围</span><em>待诊断</em></p>
+                  <p><b>频谱特征</b><span>脉冲频域能量与模板匹配度</span><em>待诊断</em></p>
+                  <p><b>脉冲形状</b><span>上升沿、脉宽与尾部衰减相似度</span><em>待诊断</em></p>
                 </aside>
               </div>
             </div>
@@ -329,17 +349,16 @@
             <div class="panel-title">缺陷概率排序面板</div>
             <div class="defect-board">
               <div class="defect-head"><span>排名</span><span>缺陷类型</span><span>匹配概率</span><span>操作</span></div>
-              <div class="defect-list" id="defectList"></div>
+              <div class="defect-list" id="defectList"><p class="diagnosis-placeholder">尚未执行诊断</p></div>
               <div class="defect-expanded" id="defectCause">
-                <div class="cause-copy"><b>绝缘物理损伤成因分析（槽部放电）</b><ol><li>定子槽部绝缘存在局部电场畸变</li><li>槽内固定位移导致槽楔或涂层磨损</li><li>放电区域扩大后可能引发绝缘击穿</li></ol></div>
-                <div class="slot-schematic" aria-hidden="true"><span></span><i></i><em></em></div>
+                <div class="cause-copy"><b>诊断分析</b><p>完成诊断后显示成因分析。</p></div>
               </div>
             </div>
           </section>
           <section class="panel diagnosis-conclusion-panel">
             <div class="panel-title">当前诊断结论</div>
-            <div class="conclusion" id="diagConclusion">导缺陷类型：槽部放电<br><small>严重程度：严重　置信度：88%</small></div>
-            <ul id="diagAdvice"><li>建议重点检查定子槽部绝缘状况。</li><li>加强槽部绝缘清洁，保持良好通风散热。</li></ul>
+            <div class="conclusion" id="diagConclusion">等待诊断结果<br><small>尚未执行诊断</small></div>
+            <ul id="diagAdvice"><li>完成诊断后显示处置建议。</li></ul>
           </section>
           <section class="panel diagnosis-prpd">
             <div class="panel-title">PRPD 图谱</div>
@@ -361,13 +380,13 @@
                 <label>添加审核意见（可选）<textarea id="diagReviewNote" placeholder="请输入审核意见..."></textarea></label>
                 <label>审核人<select id="diagReviewer"><option>admin</option><option>engineer01</option></select></label>
                 <label>签名<input id="diagSignature" value="已签名"></label>
-                <label>日期<input id="diagReportDate" type="date" value="2026-07-20"></label>
+                <label>日期<input id="diagReportDate" type="date"></label>
               </div>
               <div class="report-actions">
                 <strong>导出报告</strong>
-                <button class="danger-btn" id="exportDiagPdf" type="button">下载报告（HTML）</button>
+                <button class="danger-btn" id="exportDiagPdf" type="button" disabled>下载报告（HTML）</button>
                 <button class="primary" id="previewDiagReport">预览报告</button>
-                <button class="primary" id="printDiagReport" type="button">打印报告</button>
+                <button class="primary" id="printDiagReport" type="button" disabled>打印报告</button>
               </div>
             </div>
             <div class="diag-report-preview" id="diagReportPreview" hidden></div>
@@ -446,13 +465,17 @@
             <div class="progress"><span id="selfCheckProgress" style="width:0%"></span></div>
             <table class="data-table"><tbody id="selfCheckRows"></tbody></table>
           </section>
-          <section class="panel sys-pane" id="sys-config"><div class="panel-title">硬件配置</div><table class="data-table"><tbody><tr><td>CH01</td><td>3#机组</td><td>A相UHF</td><td>启用</td></tr><tr><td>CH02</td><td>3#机组</td><td>B相UHF</td><td>启用</td></tr></tbody></table></section>
+          <section class="panel sys-pane" id="sys-config">
+            <div class="panel-title row"><span>硬件配置（只读）</span><button id="goDeviceManagementBtn" class="primary" type="button">前往设备管理</button></div>
+            <p id="systemHardwareHint" class="helper-text">本页仅汇总当前生效配置；新增、编辑和保存统一在“设备管理”完成。</p>
+            <div class="table-wrap"><table class="data-table"><thead><tr><th>通道ID</th><th>机组</th><th>名称</th><th>类型</th><th>采样率</th><th>状态</th></tr></thead><tbody id="systemHardwareRows"></tbody></table></div>
+          </section>
           <section class="panel sys-pane" id="sys-users"><div class="panel-title row"><span>用户管理</span><button class="primary" id="addDemoUserBtn" type="button">新增用户</button></div><p class="boundary-notice" id="demoUserNotice">前端权限演示：仅演示用户资料与启停状态，不改变固定 admin 登录；生产环境需接入认证与 RBAC 服务。</p><table class="data-table"><thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody id="demoUserRows"></tbody></table></section>
           <section class="panel sys-pane" id="sys-logs">
             <div class="panel-title row"><span>系统日志</span><button class="primary" id="exportSystemLogsBtn" type="button">导出 CSV</button></div>
             <div class="form-line system-log-filters"><label>操作用户<select id="systemLogUserFilter"><option>全部用户</option></select></label><label>动作<select id="systemLogActionFilter"><option>全部动作</option></select></label><button class="primary" id="querySystemLogsBtn" type="button">查询</button></div>
             <p class="panel-hint" id="systemLogHint" role="status">显示全部日志</p>
-            <div class="system-log-layout"><div class="table-scroll"><table class="data-table"><thead><tr><th>时间</th><th>操作用户</th><th>动作</th><th>摘要</th></tr></thead><tbody id="systemLogRows"></tbody></table></div><aside class="system-log-detail" id="systemLogDetail" tabindex="-1"><strong>日志详情</strong><p>选择一条日志查看完整信息。</p></aside></div>
+            <div class="system-log-layout"><div class="table-scroll"><table class="data-table"><thead><tr><th>时间（UTC+8）</th><th>操作用户</th><th>动作</th><th>摘要</th></tr></thead><tbody id="systemLogRows"></tbody></table></div><aside class="system-log-detail" id="systemLogDetail" tabindex="-1"><strong>日志详情</strong><p>选择一条日志查看完整信息。</p></aside></div>
             <canvas id="healthChart"></canvas>
           </section>
         </div>
@@ -479,8 +502,8 @@
       <span>数据采集：<b>正常</b> <i></i></span>
       <span>存储状态：<b>正常</b> <i></i></span>
       <span>网络状态：<b>正常</b> <i></i></span>
-      <span id="lastDataUpdated">数据更新：刚刚</span>
-      <span class="stale-data-warning" id="staleDataWarning" role="status" hidden>数据可能已过期</span>
+      <span id="lastDataUpdated">冻结样例数据：2025-05-20 14:32:18 UTC+8</span>
+      <span class="stale-data-warning" id="staleDataWarning" role="status">非实时采集</span>
       <span>© 2025 局放在线监测系统 V2.1.0</span>
     </footer>
   </div>

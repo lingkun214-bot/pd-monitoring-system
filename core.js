@@ -140,6 +140,21 @@ function formatDevicePath(context) {
   return (findDevicePath(context.selectedId) || []).map(node => node.label).join(" / ");
 }
 
+function resolveTrendTarget(context) {
+  const path = findDevicePath(context?.selectedId);
+  const selected = path?.at(-1);
+  if (!path || selected?.type !== "channel") return null;
+  const unit = path.find(node => node.type === "unit");
+  const channel = path.find(node => node.type === "channel");
+  if (!unit || !channel) return null;
+  const normalizedChannel = channel.label.match(/^[ABC]相/)?.[0];
+  if (!normalizedChannel) return null;
+  return {
+    unit: unit.label.replace(/#\s*机组$/, "# 机组"),
+    channel: normalizedChannel,
+  };
+}
+
 function toggleDeviceSelection(context, id) {
   if (!context.multi) return { ...context, selectedId: id, selectedIds: [id] };
   const exists = context.selectedIds.includes(id);
@@ -148,29 +163,93 @@ function toggleDeviceSelection(context, id) {
   return { ...context, selectedId: safeIds[safeIds.length - 1], selectedIds: safeIds };
 }
 
-function filterHistoryRows(rows, unitChannel = "全部机组", level = "全部级别") {
-  const normalized = unitChannel.replace(/\s+/g, "");
+const HISTORY_TIME_ZONE = "Asia/Shanghai";
+const MAX_HISTORY_RANGE_MS = 90 * 24 * 60 * 60 * 1000;
+
+function parseShanghaiDateTime(value) {
+  if (typeof value !== "string") return Number.NaN;
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return Number.NaN;
+  const [, year, month, day, hour, minute, second = "00"] = match;
+  const timestamp = Date.parse(`${year}-${month}-${day}T${hour}:${minute}:${second}+08:00`);
+  if (!Number.isFinite(timestamp)) return Number.NaN;
+  const normalized = new Date(timestamp + 8 * 60 * 60 * 1000).toISOString().slice(0, 19);
+  return normalized === `${year}-${month}-${day}T${hour}:${minute}:${second}` ? timestamp : Number.NaN;
+}
+
+function formatShanghaiDateTime(value, options = {}) {
+  const timestamp = typeof value === "number" ? value : Date.parse(value);
+  if (!Number.isFinite(timestamp)) return options.fallback || "时间无效";
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: HISTORY_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    ...(options.dateOnly ? {} : { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }),
+  }).formatToParts(new Date(timestamp));
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return options.dateOnly
+    ? `${values.year}-${values.month}-${values.day}`
+    : `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
+}
+
+function todayInShanghai(now = Date.now()) {
+  const timestamp = typeof now === "number" ? now : Date.parse(now);
+  return formatShanghaiDateTime(timestamp, { dateOnly: true });
+}
+
+function validateHistoryRange(start, end, maxRangeMs = MAX_HISTORY_RANGE_MS) {
+  const startMs = parseShanghaiDateTime(start);
+  const endMs = parseShanghaiDateTime(end);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return { valid: false, error: "请输入有效的开始和结束时间" };
+  if (startMs > endMs) return { valid: false, error: "开始时间不能晚于结束时间" };
+  if (endMs - startMs > maxRangeMs) return { valid: false, error: "单次查询时间跨度不能超过 90 天" };
+  return { valid: true, startMs, endMs, start, end, timeZone: HISTORY_TIME_ZONE };
+}
+
+function normalizeHistoryFilters(filters = {}) {
+  return {
+    start: filters.start || "",
+    end: filters.end || "",
+    unitChannel: filters.unitChannel || "全部机组",
+    level: filters.level || "全部级别",
+    timeZone: HISTORY_TIME_ZONE,
+  };
+}
+
+function filterHistoryRows(rows, filters = {}) {
+  const normalizedFilters = normalizeHistoryFilters(filters);
+  const normalizedDevice = normalizedFilters.unitChannel.replace(/\s+/g, "");
+  const range = validateHistoryRange(normalizedFilters.start, normalizedFilters.end);
+  if (!range.valid) return [];
   return rows.filter(row => {
-    const matchesDevice = unitChannel === "全部机组" || `${row[1]}${row[2]}` === normalized;
-    const matchesLevel = level === "全部级别" || row[6] === level;
-    return matchesDevice && matchesLevel;
+    const rowTime = parseShanghaiDateTime(row[0]);
+    const matchesTime = rowTime >= range.startMs && rowTime <= range.endMs;
+    const matchesDevice = normalizedFilters.unitChannel === "全部机组" || `${row[1]}${row[2]}` === normalizedDevice;
+    const matchesLevel = normalizedFilters.level === "全部级别" || row[6] === normalizedFilters.level;
+    return matchesTime && matchesDevice && matchesLevel;
   });
 }
 
-function serializeHistoryCsv(rows) {
-  const header = ["时间", "机组", "通道", "Qm(pC)", "Qavg(pC)", "Ntotal", "级别"];
+function serializeHistoryCsv(rows, filters = {}) {
+  const normalizedFilters = normalizeHistoryFilters(filters);
+  const header = ["时间（UTC+8）", "机组", "通道", "Qm(pC)", "Qavg(pC)", "Ntotal", "级别"];
   const quote = value => `"${String(value ?? "").replaceAll('"', '""')}"`;
-  return `\uFEFF${[header, ...rows].map(row => row.map(quote).join(",")).join("\r\n")}`;
+  const metadata = [
+    ["查询开始（UTC+8）", normalizedFilters.start],
+    ["查询结束（UTC+8）", normalizedFilters.end],
+    ["设备条件", normalizedFilters.unitChannel],
+    ["告警级别", normalizedFilters.level],
+    ["时区", normalizedFilters.timeZone],
+  ];
+  return `\uFEFF${[...metadata, [], header, ...rows].map(row => row.map(quote).join(",")).join("\r\n")}`;
 }
 
 function buildHistoryExportPayload(rows, filters = {}) {
   return {
     title: "局部放电历史数据",
     exportedAt: null,
-    filters: {
-      unitChannel: filters.unitChannel || "全部机组",
-      level: filters.level || "全部级别",
-    },
+    filters: normalizeHistoryFilters(filters),
     records: rows.map(row => ({
       time: row[0],
       unit: row[1],
@@ -183,29 +262,157 @@ function buildHistoryExportPayload(rows, filters = {}) {
   };
 }
 
-function deriveTrendProfile(unit = "3# 机组", channel = "A相") {
+const SAMPLE_AS_OF = "2025-05-20T14:32:18+08:00";
+const SAMPLE_DATASET_ID = "PD-SAMPLE-20250520-001";
+
+function freezeMeasurementContext(assetId, unit, channel, calibration, qualityCode) {
+  return Object.freeze({
+    assetId,
+    unit,
+    channel,
+    sensor: "UHF",
+    calibration: Object.freeze({
+      engineeringUnit: "pC",
+      rawUnit: "mV",
+      ...calibration,
+    }),
+    qualityCode,
+    sampleAsOf: SAMPLE_AS_OF,
+    datasetId: SAMPLE_DATASET_ID,
+  });
+}
+
+const MISSING_CALIBRATION = Object.freeze({
+  state: "missing",
+  certificateNo: "—",
+  calibratedAt: "—",
+  validUntil: "—",
+  uncertainty: "—",
+});
+
+const EXPIRED_CALIBRATION = Object.freeze({
+  state: "expired",
+  certificateNo: "CAL-PD-2023-004A",
+  calibratedAt: "2023-03-01",
+  validUntil: "2024-02-29",
+  uncertainty: "±8.0%",
+  rawUnit: "dBm",
+});
+
+const MEASUREMENT_CONTEXTS = Object.freeze({
+  "channel-1-a": freezeMeasurementContext("channel-1-a", "1# 机组", "A相", MISSING_CALIBRATION, "Q3"),
+  "channel-1-b": freezeMeasurementContext("channel-1-b", "1# 机组", "B相", MISSING_CALIBRATION, "Q3"),
+  "channel-2-a": freezeMeasurementContext("channel-2-a", "2# 机组", "A相", MISSING_CALIBRATION, "Q3"),
+  "channel-2-b": freezeMeasurementContext("channel-2-b", "2# 机组", "B相", MISSING_CALIBRATION, "Q3"),
+  "channel-3-a": freezeMeasurementContext("channel-3-a", "3# 机组", "A相", {
+    state: "valid",
+    certificateNo: "CAL-PD-2025-003A",
+    calibratedAt: "2025-04-18",
+    validUntil: "2026-04-17",
+    uncertainty: "±5.0%",
+  }, "Q1"),
+  "channel-3-b": freezeMeasurementContext("channel-3-b", "3# 机组", "B相", MISSING_CALIBRATION, "Q3"),
+  "channel-3-c": freezeMeasurementContext("channel-3-c", "3# 机组", "C相", MISSING_CALIBRATION, "Q3"),
+  "channel-4-a": freezeMeasurementContext("channel-4-a", "4# 机组", "A相", EXPIRED_CALIBRATION, "Q2"),
+});
+
+function getMeasurementContext(assetId) {
+  const source = MEASUREMENT_CONTEXTS[assetId];
+  if (!source) return null;
+  return { ...source, calibration: { ...source.calibration } };
+}
+
+function deriveDisplayPolicy(context) {
+  if (!context) return { allowed: false, unit: "—", level: "数据不可用", reason: "未找到测量对象" };
+  if (context.calibration.state !== "valid") {
+    const reason = context.calibration.state === "expired" ? "校准已过期" : "缺少校准证书";
+    return { allowed: false, unit: context.calibration.rawUnit, level: "数据受限", reason };
+  }
+  return { allowed: true, unit: context.calibration.engineeringUnit, level: null, reason: "校准有效" };
+}
+
+const MEASUREMENT_THRESHOLDS = Object.freeze({ attention: 0.3, abnormal: 1, danger: 3 });
+const CLASSIFICATION_RULE_VERSION = "PD-QM-DEMO-1.0";
+
+function classifyMeasurement(value, thresholds, displayPolicy, ruleVersion = CLASSIFICATION_RULE_VERSION) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return { value: null, unit: displayPolicy?.unit || "—", level: "数据不可用", ruleVersion, reason: "测量值无效" };
+  }
+  if (!displayPolicy?.allowed) {
+    return {
+      value: numericValue,
+      unit: displayPolicy?.unit || "—",
+      level: displayPolicy?.level || "数据受限",
+      ruleVersion,
+      reason: displayPolicy?.reason || "不可进行工程量判定",
+    };
+  }
+  const validated = validateThresholds(thresholds);
+  if (!validated.valid) {
+    return { value: numericValue, unit: displayPolicy.unit, level: "数据不可用", ruleVersion, reason: validated.error };
+  }
+  const { attention, abnormal, danger } = validated.values;
+  const level = numericValue >= danger ? "危险"
+    : numericValue >= abnormal ? "异常"
+      : numericValue >= attention ? "注意" : "正常";
+  return { value: numericValue, unit: displayPolicy.unit, level, ruleVersion, reason: "按阈值规则判定" };
+}
+
+function findMeasurementAssetId(unit, channel) {
+  const normalizedUnit = String(unit).replace(/\s+/g, "");
+  return Object.values(MEASUREMENT_CONTEXTS).find(context => (
+    context.unit.replace(/\s+/g, "") === normalizedUnit && context.channel === channel
+  ))?.assetId || null;
+}
+
+function trendAssessment(level) {
+  if (level === "危险") return "快速劣化";
+  if (level === "异常") return "较快劣化";
+  if (level === "注意") return "轻微劣化";
+  if (level === "正常") return "稳定";
+  return level;
+}
+
+function deriveTrendProfile(unit = "3# 机组", channel = "A相", assetId = findMeasurementAssetId(unit, channel)) {
   const unitNumber = Math.max(1, Math.min(4, Number.parseInt(unit, 10) || 3));
   const channelIndex = Math.max(0, ["A相", "B相", "C相"].indexOf(channel));
   const seed = unitNumber * 10 + channelIndex + 1;
   const base = 118 + unitNumber * 76 + channelIndex * 41;
   const slope = Number((0.08 + unitNumber * 0.17 + channelIndex * 0.06).toFixed(2));
-  const status = slope >= 0.7 ? "异常" : slope >= 0.35 ? "注意" : "正常";
+  const context = getMeasurementContext(assetId);
+  const displayPolicy = deriveDisplayPolicy(context);
+  const selectedClassification = classifyMeasurement(slope, MEASUREMENT_THRESHOLDS, displayPolicy);
   const agingFactors = [1.05, 1.1, 1.2, 1.08];
   const channels = ["A相", "B相", "C相"];
   const summary = channels.map((item, index) => {
     const current = Number((base * (1 - index * 0.22) + (channelIndex === index ? 210 : 0)).toFixed(1));
     const itemSlope = Number(Math.max(0.05, slope - index * 0.14).toFixed(2));
+    const classification = classifyMeasurement(itemSlope, MEASUREMENT_THRESHOLDS, displayPolicy);
     return {
       channel: item,
       current,
       previous: Number((current * (0.62 + index * 0.04)).toFixed(1)),
       slope: itemSlope,
-      level: itemSlope >= 0.7 ? "异常" : itemSlope >= 0.3 ? "注意" : "正常",
-      assessment: itemSlope >= 0.7 ? "较快劣化" : itemSlope >= 0.3 ? "轻微劣化" : "稳定",
+      level: classification.level,
+      assessment: trendAssessment(classification.level),
+      ruleVersion: classification.ruleVersion,
     };
   });
   summary.sort((left, right) => (left.channel === channel ? -1 : right.channel === channel ? 1 : 0));
-  return { unit, channel, seed, slope, status, agingFactor: agingFactors[unitNumber - 1], summary };
+  return {
+    unit,
+    channel,
+    assetId,
+    seed,
+    slope,
+    status: selectedClassification.level,
+    displayUnit: displayPolicy.unit,
+    slopeUnit: `${displayPolicy.unit}/天`,
+    ruleVersion: selectedClassification.ruleVersion,
+    agingFactor: agingFactors[unitNumber - 1],
+    summary,
+  };
 }
 
 function escapeReportHtml(value) {
@@ -214,10 +421,57 @@ function escapeReportHtml(value) {
   })[character]);
 }
 
+function deriveDiagnosisResult(input = {}) {
+  const context = getMeasurementContext(input.assetId);
+  const policy = deriveDisplayPolicy(context);
+  const base = {
+    assetId: input.assetId || "—",
+    datasetId: input.datasetId || context?.datasetId || "—",
+    window: input.window || "—",
+    algorithmVersion: input.algorithmVersion || "PD-DEMO-1.0",
+    qualityCode: context?.qualityCode || "—",
+    calibrationState: context?.calibration.state || "unknown",
+  };
+  if (!policy.allowed || context?.qualityCode !== "Q1") {
+    return {
+      ...base,
+      determinacy: "limited",
+      defect: "待人工复核",
+      severity: "不可判定",
+      confidence: "—",
+      conclusion: "无法判定，需人工复核",
+      probabilities: [],
+      causes: ["当前测量链路不满足确定性诊断条件"],
+      advice: ["核对传感器与校准证书", "完成数据质量复核后重新诊断"],
+    };
+  }
+  return {
+    ...base,
+    determinacy: "determinate",
+    defect: "槽部放电",
+    severity: "严重",
+    confidence: "88%",
+    conclusion: "疑似槽部放电，严重程度严重，模型置信度88%",
+    probabilities: [
+      { name: "槽部放电", english: "Slot Discharge", confidence: 88 },
+      { name: "端部放电", english: "End Discharge", confidence: 12 },
+      { name: "内部气隙放电", english: "Internal Cavity", confidence: 0 },
+    ],
+    causes: ["定子槽部绝缘存在局部电场畸变特征"],
+    advice: ["复核 PRPD 图谱并安排停机检查", "将本次结果提交人工审核"],
+  };
+}
+
 function buildDiagnosisReport(context = {}) {
   const normalized = {
     unit: context.unit || "未选择机组",
     channel: context.channel || "未选择通道",
+    assetId: context.assetId || "—",
+    datasetId: context.datasetId || "—",
+    window: context.window || "—",
+    algorithmVersion: context.algorithmVersion || "—",
+    qualityCode: context.qualityCode || "—",
+    calibrationState: context.calibrationState || "unknown",
     defect: context.defect || "待诊断",
     severity: context.severity || "待评估",
     confidence: context.confidence || "—",
@@ -225,7 +479,8 @@ function buildDiagnosisReport(context = {}) {
     advice: Array.isArray(context.advice) ? context.advice : [],
     reviewer: context.reviewer || "admin",
     signature: context.signature || "未签名",
-    date: context.date || new Date().toISOString().slice(0, 10),
+    date: context.date || todayInShanghai(),
+    dateSource: context.dateSource === "user-modified" ? "user-modified" : "system-default",
     note: context.note || "无",
     completed: Boolean(context.completed),
   };
@@ -233,6 +488,10 @@ function buildDiagnosisReport(context = {}) {
     <h1>PD 局部放电诊断报告</h1>
     <p><strong>诊断对象：</strong>${escapeReportHtml(normalized.unit)} / ${escapeReportHtml(normalized.channel)}</p>
     <p><strong>报告状态：</strong>${normalized.completed ? "诊断完成" : "待完成诊断"}</p>
+    <h2>追溯信息</h2>
+    <p>资产 ID：${escapeReportHtml(normalized.assetId)}；数据集：${escapeReportHtml(normalized.datasetId)}</p>
+    <p>数据窗口：${escapeReportHtml(normalized.window)}；算法版本：${escapeReportHtml(normalized.algorithmVersion)}</p>
+    <p>质量码：${escapeReportHtml(normalized.qualityCode)}；校准状态：${escapeReportHtml(normalized.calibrationState)}</p>
     <h2>诊断结论</h2>
     <p>${escapeReportHtml(normalized.conclusion)}</p>
     <p>缺陷类型：${escapeReportHtml(normalized.defect)}；严重程度：${escapeReportHtml(normalized.severity)}；置信度：${escapeReportHtml(normalized.confidence)}</p>
@@ -367,7 +626,7 @@ function filterSystemLogs(logs = [], filters = {}) {
 
 function serializeSystemLogsCsv(logs = []) {
   const quote = value => `"${String(value ?? "").replaceAll('"', '""')}"`;
-  return `\uFEFF时间,操作用户,动作,详情\r\n${logs.map(log => [log.time, log.operator, log.action, log.detail].map(quote).join(",")).join("\r\n")}`;
+  return `\uFEFF时间（UTC+8）,操作用户,动作,详情\r\n${logs.map(log => [formatShanghaiDateTime(log.time), log.operator, log.action, log.detail].map(quote).join(",")).join("\r\n")}`;
 }
 
 function getFreshnessState(lastUpdated, now = Date.now(), thresholdMs = 30000) {
@@ -376,6 +635,16 @@ function getFreshnessState(lastUpdated, now = Date.now(), thresholdMs = 30000) {
   if (!Number.isFinite(updatedAt) || !Number.isFinite(nowAt)) return { state: "unknown", ageMs: null };
   const ageMs = Math.max(0, nowAt - updatedAt);
   return { state: ageMs > thresholdMs ? "stale" : "fresh", ageMs };
+}
+
+function normalizeOperationResult(result) {
+  if (result === undefined) return { ok: false, data: null, error: "操作未返回结果" };
+  if (result === false) return { ok: false, data: null, error: "操作未完成" };
+  if (result === true) return { ok: true, data: true, error: "" };
+  if (!result || typeof result !== "object" || typeof result.ok !== "boolean") return { ok: false, data: null, error: "操作结果格式无效" };
+  return result.ok
+    ? { ok: true, data: result.data ?? null, error: "" }
+    : { ok: false, data: null, error: result.error || "操作失败，请重试" };
 }
 
 const PDCore = {
@@ -389,11 +658,25 @@ const PDCore = {
   createDeviceContext,
   findDevicePath,
   formatDevicePath,
+  resolveTrendTarget,
   toggleDeviceSelection,
+  HISTORY_TIME_ZONE,
+  MAX_HISTORY_RANGE_MS,
+  parseShanghaiDateTime,
+  formatShanghaiDateTime,
+  todayInShanghai,
+  validateHistoryRange,
+  normalizeHistoryFilters,
   filterHistoryRows,
   serializeHistoryCsv,
   buildHistoryExportPayload,
+  SAMPLE_AS_OF,
+  SAMPLE_DATASET_ID,
+  getMeasurementContext,
+  deriveDisplayPolicy,
+  classifyMeasurement,
   deriveTrendProfile,
+  deriveDiagnosisResult,
   buildDiagnosisReport,
   validateFilterConfig,
   validateMaskWindow,
@@ -407,6 +690,7 @@ const PDCore = {
   filterSystemLogs,
   serializeSystemLogsCsv,
   getFreshnessState,
+  normalizeOperationResult,
 };
 
 globalThis.PDCore = PDCore;

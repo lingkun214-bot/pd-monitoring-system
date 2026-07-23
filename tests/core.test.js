@@ -221,38 +221,68 @@ test("toggleDeviceSelection supports multi-select without losing the primary cha
   assert.deepEqual(core.toggleDeviceSelection(next, "channel-3-b").selectedIds, ["channel-3-a"]);
 });
 
-test("filterHistoryRows filters by unit-channel and alarm level", () => {
-  const rows = [["t1", "3#机组", "A相", "1", "1", "1", "异常"], ["t2", "3#机组", "B相", "1", "1", "1", "注意"], ["t3", "2#机组", "A相", "1", "1", "1", "异常"]];
-  assert.deepEqual(core.filterHistoryRows(rows, "3#机组 A相", "异常"), [rows[0]]);
-  assert.deepEqual(core.filterHistoryRows(rows, "全部机组", "全部级别"), rows);
-});
-
-test("serializeHistoryCsv emits a BOM, stable columns, and escaped values", () => {
-  assert.equal(typeof core.serializeHistoryCsv, "function");
-  const csv = core.serializeHistoryCsv([
-    ["2025-05-20 14:32:18", "3#机组", "A相", "1,245.3", "245.6", "12,345", "异常"],
-    ["2025-05-20 13:55:21", "3#机组", "B\"相", "356.8", "78.9", "3,456", "注意"],
-  ]);
-
-  assert.ok(csv.startsWith("\uFEFF"));
-  assert.equal(csv.split("\r\n")[0], '﻿"时间","机组","通道","Qm(pC)","Qavg(pC)","Ntotal","级别"');
-  assert.match(csv, /"1,245\.3"/);
-  assert.match(csv, /"B""相"/);
-});
-
-test("serializeHistoryCsv keeps the header for an empty result", () => {
-  assert.equal(core.serializeHistoryCsv([]), '﻿"时间","机组","通道","Qm(pC)","Qavg(pC)","Ntotal","级别"');
-});
-
-test("buildHistoryExportPayload keeps filters and maps rows to stable fields", () => {
-  assert.equal(typeof core.buildHistoryExportPayload, "function");
-  const rows = [["2025-05-20 14:32:18", "3#机组", "A相", "1,245.3", "245.6", "12,345", "异常"]];
-  assert.deepEqual(core.buildHistoryExportPayload(rows, { unitChannel: "3#机组 A相", level: "异常" }), {
-    title: "局部放电历史数据",
-    exportedAt: null,
-    filters: { unitChannel: "3#机组 A相", level: "异常" },
-    records: [{ time: "2025-05-20 14:32:18", unit: "3#机组", channel: "A相", qm: "1,245.3", qavg: "245.6", ntotal: "12,345", level: "异常" }],
+test("resolveTrendTarget accepts only leaf channels and normalizes their labels", () => {
+  assert.equal(typeof core.resolveTrendTarget, "function");
+  assert.deepEqual(core.resolveTrendTarget({ selectedId: "channel-2-b" }), {
+    unit: "2# 机组",
+    channel: "B相",
   });
+  assert.deepEqual(core.resolveTrendTarget({ selectedId: "channel-3-c" }), {
+    unit: "3# 机组",
+    channel: "C相",
+  });
+  assert.equal(core.resolveTrendTarget({ selectedId: "unit-2" }), null);
+  assert.equal(core.resolveTrendTarget({ selectedId: "device-2" }), null);
+  assert.equal(core.resolveTrendTarget({ selectedId: "missing" }), null);
+});
+
+test("parseShanghaiDateTime treats wall time as UTC+8", () => {
+  assert.equal(core.parseShanghaiDateTime("2025-05-20T14:32"), Date.parse("2025-05-20T14:32:00+08:00"));
+  assert.equal(core.parseShanghaiDateTime("2025-05-20 14:32:18"), Date.parse("2025-05-20T14:32:18+08:00"));
+  assert.ok(Number.isNaN(core.parseShanghaiDateTime("bad-time")));
+});
+
+test("formatShanghaiDateTime always displays Asia/Shanghai and has an invalid fallback", () => {
+  assert.equal(core.formatShanghaiDateTime("2025-05-20T06:32:18.000Z"), "2025-05-20 14:32:18");
+  assert.equal(core.formatShanghaiDateTime("not-a-date"), "时间无效");
+});
+
+test("validateHistoryRange enforces order and a 90-day maximum", () => {
+  assert.equal(core.validateHistoryRange("2025-05-01T00:00", "2025-05-20T23:59").valid, true);
+  assert.deepEqual(core.validateHistoryRange("2025-05-21T00:00", "2025-05-20T23:59"), { valid: false, error: "开始时间不能晚于结束时间" });
+  assert.deepEqual(core.validateHistoryRange("2025-01-01T00:00", "2025-05-20T23:59"), { valid: false, error: "单次查询时间跨度不能超过 90 天" });
+  assert.deepEqual(core.validateHistoryRange("", "2025-05-20T23:59"), { valid: false, error: "请输入有效的开始和结束时间" });
+});
+
+test("todayInShanghai does not depend on the host timezone", () => {
+  assert.equal(core.todayInShanghai("2026-07-21T16:30:00.000Z"), "2026-07-22");
+});
+
+test("filterHistoryRows applies time, device, and level together", () => {
+  const rows = [
+    ["2025-05-20 14:32:18", "3#机组", "A相", 1, 2, 3, "异常"],
+    ["2025-05-20 13:55:21", "3#机组", "B相", 1, 2, 3, "异常"],
+    ["2025-05-19 14:32:18", "3#机组", "A相", 1, 2, 3, "注意"],
+  ];
+  const filtered = core.filterHistoryRows(rows, { start: "2025-05-20T14:00", end: "2025-05-20T15:00", unitChannel: "3#机组 A相", level: "异常" });
+  assert.deepEqual(filtered, [rows[0]]);
+});
+
+test("history export payload echoes the exact applied filters", () => {
+  const filters = { start: "2025-05-20T14:00", end: "2025-05-20T15:00", unitChannel: "3#机组 A相", level: "异常", timeZone: "Asia/Shanghai" };
+  const payload = core.buildHistoryExportPayload([["2025-05-20 14:32:18", "3#机组", "A相", 1, 2, 3, "异常"]], filters);
+  assert.deepEqual(payload.filters, filters);
+  assert.equal(payload.records.length, 1);
+});
+
+test("history CSV includes filter metadata before the table", () => {
+  const csv = core.serializeHistoryCsv([["2025-05-20 14:32:18", "3#机组", "A相", "1,245.3", 2, 3, "异常"]], {
+    start: "2025-05-20T14:00", end: "2025-05-20T15:00", unitChannel: "3#机组 A相", level: "异常", timeZone: "Asia/Shanghai",
+  });
+  assert.match(csv, /"查询开始（UTC\+8）","2025-05-20T14:00"/);
+  assert.match(csv, /"设备条件","3#机组 A相"/);
+  assert.match(csv, /"时间（UTC\+8）","机组","通道"/);
+  assert.match(csv, /"1,245\.3"/);
 });
 
 test("deriveTrendProfile returns deterministic linked values for a unit and channel", () => {
@@ -430,12 +460,17 @@ test("filterSystemLogs combines operator and action filters", () => {
   assert.deepEqual(core.filterSystemLogs(logs, {}), logs);
 });
 
-test("serializeSystemLogsCsv emits BOM, headings, and escaped detail", () => {
-  assert.equal(typeof core.serializeSystemLogsCsv, "function");
-  const csv = core.serializeSystemLogsCsv([{ time: "2026-07-20", operator: "admin", action: "配置", detail: "值为\"A\",完成" }]);
-  assert.equal(csv.startsWith("\uFEFF"), true);
-  assert.match(csv, /时间,操作用户,动作,详情/);
+test("serializeSystemLogsCsv exports UTC timestamps as UTC+8", () => {
+  const csv = core.serializeSystemLogsCsv([{ time: "2025-05-20T06:32:18.000Z", operator: "admin", action: "配置", detail: "值为\"A\",完成" }]);
+  assert.match(csv, /^\uFEFF时间（UTC\+8）,操作用户,动作,详情/);
+  assert.match(csv, /"2025-05-20 14:32:18"/);
   assert.match(csv, /"值为""A"",完成"/);
+});
+
+test("diagnosis report records whether its date was defaulted or edited", () => {
+  const report = core.buildDiagnosisReport({ date: "2026-07-22", dateSource: "user-modified" });
+  assert.equal(report.context.date, "2026-07-22");
+  assert.equal(report.context.dateSource, "user-modified");
 });
 
 test("getFreshnessState distinguishes fresh, stale, and unknown timestamps", () => {
@@ -443,4 +478,147 @@ test("getFreshnessState distinguishes fresh, stale, and unknown timestamps", () 
   assert.equal(core.getFreshnessState("2026-07-20T10:00:00Z", "2026-07-20T10:00:20Z", 30000).state, "fresh");
   assert.equal(core.getFreshnessState("2026-07-20T10:00:00Z", "2026-07-20T10:01:00Z", 30000).state, "stale");
   assert.equal(core.getFreshnessState("invalid", "2026-07-20T10:01:00Z", 30000).state, "unknown");
+});
+
+test("normalizeOperationResult accepts only successful result contracts", () => {
+  assert.deepEqual(core.normalizeOperationResult({ ok: true, data: 3 }), { ok: true, data: 3, error: "" });
+  assert.deepEqual(core.normalizeOperationResult({ ok: false, error: "保存失败" }), { ok: false, data: null, error: "保存失败" });
+  assert.deepEqual(core.normalizeOperationResult(false), { ok: false, data: null, error: "操作未完成" });
+  assert.deepEqual(core.normalizeOperationResult(true), { ok: true, data: true, error: "" });
+  assert.deepEqual(core.normalizeOperationResult(undefined), { ok: false, data: null, error: "操作未返回结果" });
+});
+
+test("getMeasurementContext returns a cloned calibrated context for the default asset", () => {
+  const first = core.getMeasurementContext("channel-3-a");
+  const second = core.getMeasurementContext("channel-3-a");
+  assert.deepEqual(first, {
+    assetId: "channel-3-a",
+    unit: "3# 机组",
+    channel: "A相",
+    sensor: "UHF",
+    calibration: {
+      engineeringUnit: "pC",
+      rawUnit: "mV",
+      state: "valid",
+      certificateNo: "CAL-PD-2025-003A",
+      calibratedAt: "2025-04-18",
+      validUntil: "2026-04-17",
+      uncertainty: "±5.0%",
+    },
+    qualityCode: "Q1",
+    sampleAsOf: core.SAMPLE_AS_OF,
+    datasetId: "PD-SAMPLE-20250520-001",
+  });
+  assert.notEqual(first, second);
+  first.calibration.state = "expired";
+  assert.equal(second.calibration.state, "valid");
+});
+
+test("measurement contexts cover every device tree leaf", () => {
+  const leaves = [];
+  const visit = nodes => nodes.forEach(node => {
+    if (node.type === "channel") leaves.push(node.id);
+    if (node.children) visit(node.children);
+  });
+  visit(core.DEVICE_NODES);
+  assert.deepEqual(leaves.sort(), [
+    "channel-1-a", "channel-1-b", "channel-2-a", "channel-2-b",
+    "channel-3-a", "channel-3-b", "channel-3-c", "channel-4-a",
+  ]);
+  assert.ok(leaves.every(id => core.getMeasurementContext(id)));
+});
+
+test("deriveDisplayPolicy never falls back to pC for uncalibrated data", () => {
+  const missing = core.deriveDisplayPolicy(core.getMeasurementContext("channel-2-b"));
+  const expired = core.deriveDisplayPolicy(core.getMeasurementContext("channel-4-a"));
+  assert.deepEqual(
+    { allowed: missing.allowed, unit: missing.unit, level: missing.level },
+    { allowed: false, unit: "mV", level: "数据受限" },
+  );
+  assert.deepEqual(
+    { allowed: expired.allowed, unit: expired.unit, level: expired.level },
+    { allowed: false, unit: "dBm", level: "数据受限" },
+  );
+  assert.deepEqual(core.deriveDisplayPolicy(null), {
+    allowed: false,
+    unit: "—",
+    level: "数据不可用",
+    reason: "未找到测量对象",
+  });
+});
+
+test("classifyMeasurement applies one explicit threshold rule", () => {
+  const policy = core.deriveDisplayPolicy(core.getMeasurementContext("channel-3-a"));
+  const thresholds = { attention: 0.3, abnormal: 1, danger: 3 };
+  assert.equal(core.classifyMeasurement(0.18, thresholds, policy).level, "正常");
+  assert.equal(core.classifyMeasurement(0.3, thresholds, policy).level, "注意");
+  assert.equal(core.classifyMeasurement(1, thresholds, policy).level, "异常");
+  assert.equal(core.classifyMeasurement(3, thresholds, policy).level, "危险");
+  assert.equal(core.classifyMeasurement(3, thresholds, policy).ruleVersion, "PD-QM-DEMO-1.0");
+});
+
+test("classifyMeasurement refuses engineering levels for limited data", () => {
+  const policy = core.deriveDisplayPolicy(core.getMeasurementContext("channel-2-b"));
+  assert.deepEqual(core.classifyMeasurement(0.62, { attention: 0.3, abnormal: 1, danger: 3 }, policy), {
+    value: 0.62,
+    unit: "mV",
+    level: "数据受限",
+    ruleVersion: "PD-QM-DEMO-1.0",
+    reason: "缺少校准证书",
+  });
+});
+
+test("deriveTrendProfile carries the selected asset display unit and classification", () => {
+  const calibrated = core.deriveTrendProfile("3# 机组", "A相", "channel-3-a");
+  const limited = core.deriveTrendProfile("2# 机组", "B相", "channel-2-b");
+  assert.equal(calibrated.slopeUnit, "pC/天");
+  assert.ok(calibrated.summary.every(item => item.ruleVersion === "PD-QM-DEMO-1.0"));
+  assert.equal(limited.slopeUnit, "mV/天");
+  assert.ok(limited.summary.every(item => item.level === "数据受限"));
+});
+
+test("deriveDiagnosisResult binds a deterministic result to auditable inputs", () => {
+  const input = {
+    assetId: "channel-3-a",
+    datasetId: core.SAMPLE_DATASET_ID,
+    window: "最近1000个工频周期",
+    algorithmVersion: "PD-DEMO-1.0",
+  };
+  const first = core.deriveDiagnosisResult(input);
+  const second = core.deriveDiagnosisResult(input);
+  assert.deepEqual(first, second);
+  assert.equal(first.determinacy, "determinate");
+  assert.equal(first.assetId, "channel-3-a");
+  assert.equal(first.datasetId, core.SAMPLE_DATASET_ID);
+  assert.equal(first.algorithmVersion, "PD-DEMO-1.0");
+  assert.equal(first.qualityCode, "Q1");
+  assert.ok(first.probabilities.length >= 3);
+});
+
+test("deriveDiagnosisResult returns manual review for limited calibration", () => {
+  const result = core.deriveDiagnosisResult({
+    assetId: "channel-2-b",
+    datasetId: core.SAMPLE_DATASET_ID,
+    window: "最近1000个工频周期",
+    algorithmVersion: "PD-DEMO-1.0",
+  });
+  assert.equal(result.determinacy, "limited");
+  assert.equal(result.conclusion, "无法判定，需人工复核");
+  assert.deepEqual(result.probabilities, []);
+});
+
+test("buildDiagnosisReport includes traceability metadata", () => {
+  const report = core.buildDiagnosisReport({
+    completed: true,
+    assetId: "channel-3-a",
+    datasetId: core.SAMPLE_DATASET_ID,
+    window: "最近1000个工频周期",
+    algorithmVersion: "PD-DEMO-1.0",
+    qualityCode: "Q1",
+    calibrationState: "valid",
+  });
+  assert.match(report.previewHtml, /channel-3-a/);
+  assert.match(report.previewHtml, /PD-SAMPLE-20250520-001/);
+  assert.match(report.previewHtml, /PD-DEMO-1.0/);
+  assert.match(report.previewHtml, /Q1/);
 });

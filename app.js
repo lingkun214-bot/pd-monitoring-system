@@ -76,8 +76,6 @@ const DEFAULT_SYSTEM_LOGS = Object.freeze([
 ]);
 let systemLogs = DEFAULT_SYSTEM_LOGS.map(record => ({ ...record }));
 let currentSystemLogs = [...systemLogs];
-let lastDataUpdatedAt = new Date().toISOString();
-const DATA_STALE_THRESHOLD_MS = 30000;
 
 function readAuthenticated() {
   try {
@@ -155,77 +153,34 @@ const historyRows = [
   ["2025-05-20 14:32:18", "3#机组", "A相", "1,245.3", "245.6", "12,345", "异常"],
   ["2025-05-20 13:55:21", "3#机组", "B相", "356.8", "78.9", "3,456", "注意"],
   ["2025-05-20 12:40:10", "4#机组", "A相", "98.7", "22.1", "1,234", "正常"],
-  ["2025-05-20 11:30:42", "2#机组", "C相", "245.6", "45.3", "2,345", "注意"],
-  ["2025-05-20 09:15:33", "3#机组", "Qm通道", "856.2", "156.7", "6,789", "异常"],
+  ["2025-05-20 11:30:42", "2#机组", "B相", "245.6", "45.3", "2,345", "注意"],
+  ["2025-05-20 09:15:33", "3#机组", "C相", "856.2", "156.7", "6,789", "异常"],
   ["2025-05-20 08:22:11", "1#机组", "B相", "78.4", "15.6", "987", "正常"],
-];
+].map(row => {
+  const assetId = resolveAssetIdForSelection(row[1], row[2]);
+  const policy = PDCore.deriveDisplayPolicy(PDCore.getMeasurementContext(assetId));
+  const classification = PDCore.classifyMeasurement(Number(String(row[3]).replaceAll(",", "")), DEFAULT_THRESHOLDS, policy);
+  return [...row.slice(0, 6), classification.level];
+});
 
 const unitProfiles = [
-  { unit: "1# 机组", channel: "1#-B相", status: "正常", levelClass: "normal", qm: "125.6", qavg: "28.4", ntotal: "1,126", beta: "0.12", gauge: [38, 32, 28, 22], seed: 1 },
-  { unit: "2# 机组", channel: "2#-C相", status: "注意", levelClass: "warn", qm: "356.8", qavg: "78.9", ntotal: "3,456", beta: "0.36", gauge: [56, 48, 44, 38], seed: 2 },
-  { unit: "3# 机组", channel: "3#-A相", status: "异常", levelClass: "danger", qm: "1,245.3", qavg: "245.6", ntotal: "12,345", beta: "0.85", gauge: [82, 76, 72, 66], seed: 3 },
-  { unit: "4# 机组", channel: "4#-A相", status: "正常", levelClass: "normal", qm: "98.7", qavg: "22.1", ntotal: "1,234", beta: "0.08", gauge: [34, 28, 31, 18], seed: 4 },
+  { assetId: "channel-1-b", unit: "1# 机组", channel: "1#-B相", qm: "125.6", qavg: "28.4", ntotal: "1,126", beta: "0.12", gauge: [38, 32, 28, 22], seed: 1 },
+  { assetId: "channel-2-b", unit: "2# 机组", channel: "2#-B相", qm: "356.8", qavg: "78.9", ntotal: "3,456", beta: "0.36", gauge: [56, 48, 44, 38], seed: 2 },
+  { assetId: "channel-3-a", unit: "3# 机组", channel: "3#-A相", qm: "1,245.3", qavg: "245.6", ntotal: "12,345", beta: "0.85", gauge: [82, 76, 72, 66], seed: 3 },
+  { assetId: "channel-4-a", unit: "4# 机组", channel: "4#-A相", qm: "98.7", qavg: "22.1", ntotal: "1,234", beta: "0.08", gauge: [34, 28, 31, 18], seed: 4 },
 ];
 
 const pulseRows = [
-  { id: "#1", phase: "32.4°", tr: "1.02 ns", width: "7.80 ns", voltage: "0.228 V", charge: "126.4 pC" },
-  { id: "#2", phase: "45.7°", tr: "1.25 ns", width: "8.76 ns", voltage: "0.312 V", charge: "245.6 pC" },
-  { id: "#3", phase: "67.1°", tr: "1.41 ns", width: "9.10 ns", voltage: "0.286 V", charge: "211.8 pC" },
-  { id: "#4", phase: "89.3°", tr: "1.18 ns", width: "7.96 ns", voltage: "0.194 V", charge: "156.2 pC" },
+  { id: "#1", phase: "32.4°", tr: "1.02 ns", width: "7.80 ns", voltage: "0.228 V", charge: "126.4" },
+  { id: "#2", phase: "45.7°", tr: "1.25 ns", width: "8.76 ns", voltage: "0.312 V", charge: "245.6" },
+  { id: "#3", phase: "67.1°", tr: "1.41 ns", width: "9.10 ns", voltage: "0.286 V", charge: "211.8" },
+  { id: "#4", phase: "89.3°", tr: "1.18 ns", width: "7.96 ns", voltage: "0.194 V", charge: "156.2" },
 ];
 
 const exportOptions = [
   ["CSV", "历史统计数据", "适用于 Excel/MATLAB/Python"],
   ["JSON", "结构化数据包", "包含筛选条件与完整字段"],
   ["WAVEFORM", "当前脉冲波形", "包含脉冲参数与回放对象"],
-];
-
-const diagnosisDefects = [
-  {
-    name: "槽部放电",
-    english: "Slot Discharge",
-    severity: "严重",
-    confidence: "88%",
-    percent: 88,
-    causes: ["定子槽部绝缘存在局部电场畸变，电场强度集中", "槽内固定位移导致槽楔或涂层表面出现微小气隙或裂纹", "高电压作用下气隙中发生局部电离放电", "放电侵蚀绝缘表面，导致绝缘材料劣化、碳化", "劣化区域扩大，放电量增加，最终可能引发槽部绝缘击穿"],
-    advice: ["重点检查定子槽部绝缘状况", "加强槽部绝缘清洁并保持通风散热"],
-  },
-  {
-    name: "端部放电",
-    english: "End Discharge",
-    severity: "中等",
-    confidence: "12%",
-    percent: 12,
-    causes: ["端部绕组电场集中，防晕层过渡区存在电位梯度", "绑扎结构松动造成局部空气间隙", "湿度升高或表面污秽会提高端部电晕概率", "脉冲相位宽度较大，常伴随较强的相位离散性", "需结合端部目视检查与红外温升结果复核"],
-    advice: ["复核端部绑扎和防晕层状态", "观察湿度与Qm同步变化"],
-  },
-  {
-    name: "内部气隙放电",
-    english: "Internal Cavity",
-    severity: "低",
-    confidence: "<1%",
-    percent: 1,
-    causes: ["绝缘内部气隙特征不明显，当前匹配概率较低", "相位分布与内部气隙模板偏差较大", "若持续出现，应关注绝缘制造缺陷或热老化空洞", "需要结合介损、局放离线试验进一步确认", "当前更可能为槽部放电伴随随机噪声"],
-    advice: ["保留为低概率候选", "后续结合离线试验复核"],
-  },
-  {
-    name: "表面放电",
-    english: "Surface Discharge",
-    severity: "低",
-    confidence: "<1%",
-    percent: 1,
-    causes: ["绝缘表面污秽、潮湿或爬电路径可能诱发表面放电", "当前PRPD点簇未呈现典型沿面扩展特征", "幅值离散度低于表面放电模板", "建议在停机窗口检查线棒表面清洁度", "若环境湿度升高后增强，应提高该候选权重"],
-    advice: ["关注环境湿度和表面污秽", "必要时安排清洁和防潮处理"],
-  },
-  {
-    name: "悬浮电位放电",
-    english: "Floating Potential",
-    severity: "低",
-    confidence: "<1%",
-    percent: 1,
-    causes: ["金属部件接触不良可能产生悬浮电位放电", "当前缺少周期性窄脉冲和稳定重复特征", "与主放电簇的相位耦合度较弱", "需核查屏蔽层、接地端子及连接件状态", "作为低概率候选保留在后续趋势跟踪中"],
-    advice: ["复核接地与连接件紧固状态", "持续跟踪窄脉冲重复性"],
-  },
 ];
 
 let selectedUnitIndex = 2;
@@ -235,29 +190,38 @@ let alarmManagementFilter = "all";
 let selectedAlarmIndex = 0;
 let historyReplaySeed = 0;
 let currentHistoryRows = [...historyRows];
+const DEFAULT_HISTORY_FILTERS = Object.freeze({ start: "2025-05-19T00:00", end: "2025-05-20T23:59", unitChannel: "全部机组", level: "全部级别", timeZone: PDCore.HISTORY_TIME_ZONE });
+let currentHistoryFilters = { ...DEFAULT_HISTORY_FILTERS };
 let historyPlaybackTimer = null;
 let selectedDiagnosisIndex = 0;
 let selectedDiagUnit = "3# 机组";
 let selectedDiagChannel = "A相";
 let currentPage = "dashboard";
 let deviceContext = PDCore.createDeviceContext();
-let currentTrendProfile = PDCore.deriveTrendProfile("3# 机组", "A相");
+let selectedAssetId = "channel-3-a";
+let currentMeasurementContext = PDCore.getMeasurementContext(selectedAssetId);
+let currentDisplayPolicy = PDCore.deriveDisplayPolicy(currentMeasurementContext);
+let currentTrendProfile = PDCore.deriveTrendProfile("3# 机组", "A相", selectedAssetId);
 let diagnosisContext = {
+  assetId: "channel-3-a",
   unit: selectedDiagUnit,
   channel: selectedDiagChannel,
-  defect: diagnosisDefects[0].name,
-  severity: diagnosisDefects[0].severity,
-  confidence: diagnosisDefects[0].confidence,
-  conclusion: `疑似${diagnosisDefects[0].name}`,
-  advice: [...diagnosisDefects[0].advice],
+  datasetId: PDCore.SAMPLE_DATASET_ID,
+  window: "最近1000个工频周期",
+  algorithmVersion: "PD-DEMO-1.0",
+  probabilities: [],
+  advice: [],
   reviewer: "admin",
   signature: "已签名",
-  date: new Date().toISOString().slice(0, 10),
+  date: PDCore.todayInShanghai(),
   note: "",
   completed: false,
 };
+let diagnosisRunToken = 0;
+let diagnosisTimer = null;
 const MULTI_DEVICE_PAGES = new Set(["history"]);
 const DEVICE_TREE_PAGES = new Set(["history", "trend", "processing"]);
+const MEASUREMENT_PAGES = new Set(["dashboard", "history", "trend", "diagnosis", "processing"]);
 let toastTimer = null;
 
 function badge(level) {
@@ -265,7 +229,42 @@ function badge(level) {
   if (level === "注意") return `<span class="pill warn">${level}</span>`;
   if (level === "危险") return `<span class="pill risk">${level}</span>`;
   if (level === "系统") return `<span class="pill ok">${level}</span>`;
+  if (level === "数据受限" || level === "数据不可用") return `<span class="pill limited">${level}</span>`;
   return `<span class="pill bad">${level}</span>`;
+}
+
+function resolveAssetIdForSelection(unit, channel) {
+  const normalizedUnit = String(unit).replace(/\s+/g, "").replace("#机组", "");
+  const normalizedChannel = String(channel).replace(/通道|UHF|\s|-/g, "").replace(/^\d+#/, "");
+  const candidate = `channel-${normalizedUnit.replace("#", "")}-${normalizedChannel.charAt(0).toLowerCase()}`;
+  return PDCore.getMeasurementContext(candidate) ? candidate : null;
+}
+
+function setSelectedMeasurementAsset(assetId) {
+  selectedAssetId = PDCore.getMeasurementContext(assetId) ? assetId : selectedAssetId;
+  currentMeasurementContext = PDCore.getMeasurementContext(selectedAssetId);
+  currentDisplayPolicy = PDCore.deriveDisplayPolicy(currentMeasurementContext);
+  renderMeasurementTrustBar();
+  if (currentPage === "history") renderWaveSelection(selectedPulseIndex);
+}
+
+function renderMeasurementTrustBar() {
+  const bar = $("#measurementTrustBar");
+  if (!bar) return;
+  const context = currentMeasurementContext;
+  const calibration = context?.calibration;
+  bar.hidden = !MEASUREMENT_PAGES.has(currentPage);
+  $("#trustAssetId").textContent = context?.assetId || "—";
+  $("#trustCalibration").textContent = calibration?.state === "valid" ? "有效"
+    : calibration?.state === "expired" ? "已过期" : calibration ? "缺失" : "未知";
+  $("#trustCertificate").textContent = calibration?.certificateNo || "—";
+  $("#trustQuality").textContent = context?.qualityCode || "—";
+  $("#trustDisplayUnit").textContent = currentDisplayPolicy.unit;
+  $("#trustSampleAsOf").textContent = context
+    ? PDCore.formatShanghaiDateTime(context.sampleAsOf) + " UTC+8"
+    : "—";
+  bar.dataset.state = currentDisplayPolicy.allowed ? "trusted" : "limited";
+  bar.title = currentDisplayPolicy.reason;
 }
 
 function showToast(message) {
@@ -277,19 +276,14 @@ function showToast(message) {
   toastTimer = setTimeout(() => { toast.hidden = true; }, 2800);
 }
 
-function markDataUpdated() {
-  lastDataUpdatedAt = new Date().toISOString();
-  renderFreshness();
-}
-
-function renderFreshness() {
-  const label = $("#lastDataUpdated"); const warning = $("#staleDataWarning");
-  if (!label || !warning) return;
-  const freshness = PDCore.getFreshnessState(lastDataUpdatedAt, Date.now(), DATA_STALE_THRESHOLD_MS);
-  if (freshness.state === "unknown") { label.textContent = "数据更新：未知"; warning.hidden = false; return; }
-  const seconds = Math.floor(freshness.ageMs / 1000);
-  label.textContent = `数据更新：${seconds < 5 ? "刚刚" : `${seconds} 秒前`}`;
-  warning.hidden = freshness.state !== "stale";
+function renderSampleProvenance() {
+  const label = $("#lastDataUpdated");
+  const warning = $("#staleDataWarning");
+  if (label) label.textContent = `冻结样例数据：${PDCore.formatShanghaiDateTime(PDCore.SAMPLE_AS_OF)} UTC+8`;
+  if (warning) {
+    warning.hidden = false;
+    warning.textContent = "非实时采集";
+  }
 }
 
 function setPanelState(panel, state, message = "", retry) {
@@ -304,14 +298,21 @@ function setPanelState(panel, state, message = "", retry) {
 }
 
 async function runButtonAction(button, busyText, operation) {
-  if (!button || button.disabled) return;
+  if (!button || button.disabled) return { ok: false, error: "按钮当前不可用" };
   const original = button.textContent;
   const panel = button.closest(".panel");
   button.disabled = true;
   button.textContent = busyText;
   setPanelState(panel, "loading", busyText);
-  try { await operation(); setPanelState(panel, "ready"); markDataUpdated(); }
-  catch (error) { setPanelState(panel, "error", error?.message || "操作失败，请重试", () => runButtonAction(button, busyText, operation)); }
+  try {
+    const result = PDCore.normalizeOperationResult(await operation());
+    if (!result.ok) throw new Error(result.error);
+    setPanelState(panel, "ready");
+    return result;
+  } catch (error) {
+    setPanelState(panel, "error", error?.message || "操作失败，请重试", () => runButtonAction(button, busyText, operation));
+    return { ok: false, error: error?.message || "操作失败，请重试" };
+  }
   finally { button.disabled = false; button.textContent = original; }
 }
 
@@ -356,15 +357,36 @@ function renderDeviceTree() {
   const query = deviceContext.query.trim().toLowerCase();
   container.innerHTML = flattenDeviceNodes(PDCore.DEVICE_NODES)
     .filter(node => !query || node.label.toLowerCase().includes(query) || node.type !== "channel")
-    .map(node => `<button class="device-tree-node" type="button" data-device-id="${node.id}" data-level="${node.level}" aria-pressed="${deviceContext.selectedIds.includes(node.id)}">${node.children?.length ? "▾ " : "○ "}${node.label}</button>`)
+    .map(node => node.type === "channel"
+      ? `<button class="device-tree-node" type="button" data-device-id="${node.id}" data-level="${node.level}" aria-pressed="${deviceContext.selectedIds.includes(node.id)}">○ ${node.label}</button>`
+      : `<div class="device-tree-node device-tree-branch" data-level="${node.level}">${node.children?.length ? "▾ " : ""}${node.label}</div>`)
     .join("");
-  $$("[data-device-id]", container).forEach(button => button.addEventListener("click", () => selectDeviceNode(button.dataset.deviceId)));
+  $$("button[data-device-id]", container).forEach(button => {
+    button.addEventListener("click", () => selectDeviceNode(button.dataset.deviceId));
+  });
+}
+
+function syncTrendTargetFromDeviceTree() {
+  if (currentPage !== "trend") return false;
+  const target = PDCore.resolveTrendTarget(deviceContext);
+  const unitSelect = $("#trendUnitSelect");
+  const channelSelect = $("#trendChannelSelect");
+  if (!target || !unitSelect || !channelSelect) return false;
+  const hasUnit = [...unitSelect.options].some(option => option.value === target.unit);
+  const hasChannel = [...channelSelect.options].some(option => option.value === target.channel);
+  if (!hasUnit || !hasChannel) return false;
+  unitSelect.value = target.unit;
+  channelSelect.value = target.channel;
+  renderTrendTarget();
+  return true;
 }
 
 function selectDeviceNode(id) {
   deviceContext = PDCore.toggleDeviceSelection(deviceContext, id);
+  setSelectedMeasurementAsset(deviceContext.selectedId);
   renderDeviceTree();
   renderDeviceLinkedPage(currentPage);
+  syncTrendTargetFromDeviceTree();
   showToast(`已切换至 ${PDCore.formatDevicePath(deviceContext)}`);
   requestAnimationFrame(drawAll);
 }
@@ -414,7 +436,11 @@ function setPage(pageId) {
     }
   }
   $(".page.active")?.classList.toggle("tree-expanded", !deviceContext.collapsed && pageId !== "dashboard");
+  if (pageId === "diagnosis" && diagnosisContext.assetId) setSelectedMeasurementAsset(diagnosisContext.assetId);
+  if (pageId === "trend") renderTrendTarget();
+  if (pageId === "history") renderWaveSelection(selectedPulseIndex);
   renderDeviceLinkedPage(pageId);
+  renderMeasurementTrustBar();
   drawAll();
 }
 
@@ -453,7 +479,6 @@ function appendSystemLog(action, detail) {
   }
   renderSystemLogFilters();
   renderSystemLogs();
-  markDataUpdated();
 }
 
 function loadSystemLogs() {
@@ -476,7 +501,7 @@ function renderSystemLogFilters() {
 function renderSystemLogs() {
   const rows = $("#systemLogRows"); if (!rows) return;
   currentSystemLogs = PDCore.filterSystemLogs(systemLogs, { operator: $("#systemLogUserFilter")?.value, action: $("#systemLogActionFilter")?.value });
-  rows.innerHTML = currentSystemLogs.length ? currentSystemLogs.map((log, index) => `<tr data-log-index="${index}" tabindex="0" role="button"><td>${escapeHTML(log.time.slice(0, 19).replace("T", " "))}</td><td>${escapeHTML(log.operator)}</td><td>${escapeHTML(log.action)}</td><td>${escapeHTML(log.detail || "-")}</td></tr>`).join("") : `<tr><td colspan="4" class="empty-state">当前条件下没有日志</td></tr>`;
+  rows.innerHTML = currentSystemLogs.length ? currentSystemLogs.map((log, index) => `<tr data-log-index="${index}" tabindex="0" role="button"><td>${escapeHTML(PDCore.formatShanghaiDateTime(log.time))}</td><td>${escapeHTML(log.operator)}</td><td>${escapeHTML(log.action)}</td><td>${escapeHTML(log.detail || "-")}</td></tr>`).join("") : `<tr><td colspan="4" class="empty-state">当前条件下没有日志</td></tr>`;
   $("#systemLogHint").textContent = `共 ${currentSystemLogs.length} 条日志`;
 }
 
@@ -484,14 +509,14 @@ function selectSystemLog(index) {
   const log = currentSystemLogs[index]; if (!log) return;
   $$("#systemLogRows tr").forEach(row => row.classList.toggle("selected", Number(row.dataset.logIndex) === index));
   const detail = $("#systemLogDetail");
-  detail.innerHTML = `<strong>日志详情</strong><dl><dt>时间</dt><dd>${escapeHTML(log.time.slice(0, 19).replace("T", " "))}</dd><dt>操作用户</dt><dd>${escapeHTML(log.operator)}</dd><dt>动作</dt><dd>${escapeHTML(log.action)}</dd><dt>详情</dt><dd>${escapeHTML(log.detail || "-")}</dd></dl>`;
+  detail.innerHTML = `<strong>日志详情</strong><dl><dt>时间（UTC+8）</dt><dd>${escapeHTML(PDCore.formatShanghaiDateTime(log.time))}</dd><dt>操作用户</dt><dd>${escapeHTML(log.operator)}</dd><dt>动作</dt><dd>${escapeHTML(log.action)}</dd><dt>详情</dt><dd>${escapeHTML(log.detail || "-")}</dd></dl>`;
   detail.focus();
 }
 
 function initSystemLogs() {
   loadSystemLogs(); renderSystemLogFilters(); renderSystemLogs();
   $("#querySystemLogsBtn")?.addEventListener("click", renderSystemLogs);
-  $("#exportSystemLogsBtn")?.addEventListener("click", () => { downloadBlob(PDCore.serializeSystemLogsCsv(currentSystemLogs), "text/csv;charset=utf-8", `system-logs-${new Date().toISOString().slice(0, 10)}.csv`); });
+  $("#exportSystemLogsBtn")?.addEventListener("click", () => { downloadBlob(PDCore.serializeSystemLogsCsv(currentSystemLogs), "text/csv;charset=utf-8", `system-logs-${PDCore.todayInShanghai()}.csv`); });
   $("#systemLogRows")?.addEventListener("click", event => { const row = event.target.closest("tr[data-log-index]"); if (row) selectSystemLog(Number(row.dataset.logIndex)); });
   $("#systemLogRows")?.addEventListener("keydown", event => { if (!["Enter", " "].includes(event.key)) return; const row = event.target.closest("tr[data-log-index]"); if (row) { event.preventDefault(); selectSystemLog(Number(row.dataset.logIndex)); } });
 }
@@ -500,6 +525,12 @@ function renderDeviceRows() {
   const rows = $("#deviceRows");
   if (!rows) return;
   rows.innerHTML = devices.map(record => `<tr data-device-id="${record.id}" tabindex="0" role="button" class="${record.id === selectedDeviceId ? "selected" : ""}"><td>${record.id}</td><td>${record.unit}</td><td>${escapeHTML(record.name)}</td><td>${record.type}</td><td>${record.sampleRate}</td><td>${badge(record.status === "启用" ? "正常" : "注意")}</td></tr>`).join("");
+}
+
+function renderSystemHardwareOverview() {
+  const rows = $("#systemHardwareRows");
+  if (!rows) return;
+  rows.innerHTML = devices.map(record => `<tr><td>${escapeHTML(record.id)}</td><td>${escapeHTML(record.unit)}</td><td>${escapeHTML(record.name)}</td><td>${escapeHTML(record.type)}</td><td>${escapeHTML(record.sampleRate)}</td><td><span class="pill ${record.status === "启用" ? "ok" : "warn"}">${escapeHTML(record.status)}</span></td></tr>`).join("");
 }
 
 function loadDeviceForm(record = devices.find(item => item.id === selectedDeviceId)) {
@@ -531,6 +562,7 @@ function saveCurrentDeviceDraft() {
   devices = nextDevices;
   deviceFormDirty = false;
   renderDeviceRows();
+  renderSystemHardwareOverview();
   appendSystemLog("设备配置", `${selectedDeviceId} 配置已保存`);
   return true;
 }
@@ -583,6 +615,7 @@ async function selectDeviceRecord(id) {
 function initDeviceManagement() {
   loadDevices();
   renderDeviceRows();
+  renderSystemHardwareOverview();
   loadDeviceForm();
   if (deviceStorageWarning) showToast("设备配置数据异常，已恢复默认值");
   $("#deviceRows")?.addEventListener("click", event => {
@@ -806,7 +839,7 @@ function renderWaveSelection(index = selectedPulseIndex) {
   list.innerHTML = pulseRows.map((pulse, pulseIndex) => `
     <button class="pulse-row ${pulseIndex === index ? "active" : ""}" data-pulse-index="${pulseIndex}">
       <strong>${pulse.id}</strong>
-      <span>${pulse.phase}<br><small>电荷量 ${pulse.charge}</small></span>
+      <span>${pulse.phase}<br><small>幅值 ${pulse.charge} ${currentDisplayPolicy.unit}</small></span>
     </button>
   `).join("");
   const current = pulseRows[index];
@@ -815,7 +848,7 @@ function renderWaveSelection(index = selectedPulseIndex) {
     <div class="param-row"><small>tr</small><span>上升时间：${current.tr}</span></div>
     <div class="param-row"><small>tw</small><span>脉宽：${current.width}</span></div>
     <div class="param-row"><small>Vpk</small><span>峰值电压：${current.voltage}</span></div>
-    <div class="param-row"><small>q</small><span>电荷量：${current.charge}</span></div>
+    <div class="param-row"><small>q</small><span>幅值：${current.charge} ${currentDisplayPolicy.unit}</span></div>
   `;
   $$("#pulseList .pulse-row").forEach(row => {
     row.addEventListener("click", () => {
@@ -853,7 +886,7 @@ function downloadBlob(content, mime, filename) {
 function historyExportFilename(suffix) {
   const unitChannel = $("#historyUnitChannelFilter")?.value || "全部机组";
   const target = unitChannel.replace(/[\\/:*?"<>|\s]+/g, "-");
-  return `局放历史数据-${target}-${new Date().toISOString().slice(0, 10)}.${suffix}`;
+  return `局放历史数据-${target}-${PDCore.todayInShanghai()}.${suffix}`;
 }
 
 function exportHistoryData(type) {
@@ -861,19 +894,23 @@ function exportHistoryData(type) {
     showToast("当前查询没有数据，无法导出");
     return false;
   }
-  const filters = {
-    unitChannel: $("#historyUnitChannelFilter")?.value || "全部机组",
-    level: $("#historyLevelFilter")?.value || "全部级别",
-  };
   if (type === "CSV") {
-    downloadBlob(PDCore.serializeHistoryCsv(currentHistoryRows), "text/csv;charset=utf-8", historyExportFilename("csv"));
+    downloadBlob(PDCore.serializeHistoryCsv(currentHistoryRows, currentHistoryFilters), "text/csv;charset=utf-8", historyExportFilename("csv"));
   } else if (type === "JSON") {
-    const payload = PDCore.buildHistoryExportPayload(currentHistoryRows, filters);
+    const payload = PDCore.buildHistoryExportPayload(currentHistoryRows, currentHistoryFilters);
     payload.exportedAt = new Date().toISOString();
     downloadBlob(JSON.stringify(payload, null, 2), "application/json;charset=utf-8", historyExportFilename("json"));
   } else if (type === "WAVEFORM") {
     const selected = pulseRows[selectedPulseIndex] || pulseRows[0];
-    const payload = { title: "局部放电脉冲波形", target: currentHistoryRows[0], pulse: selected, exportedAt: new Date().toISOString() };
+    const payload = {
+      title: "局部放电脉冲波形",
+      target: currentHistoryRows[0],
+      assetId: selectedAssetId,
+      displayUnit: currentDisplayPolicy.unit,
+      pulse: selected,
+      filters: currentHistoryFilters,
+      exportedAt: new Date().toISOString(),
+    };
     downloadBlob(JSON.stringify(payload, null, 2), "application/json;charset=utf-8", historyExportFilename("waveform.json"));
   } else {
     showToast("暂不支持该导出格式");
@@ -886,8 +923,15 @@ function exportHistoryData(type) {
 
 function renderTrendTarget() {
   const unit = $("#trendUnitSelect")?.value || "3# 机组";
-  const channel = $("#trendChannelSelect")?.value || "A相";
-  currentTrendProfile = PDCore.deriveTrendProfile(unit, channel);
+  let channel = $("#trendChannelSelect")?.value || "A相";
+  let assetId = resolveAssetIdForSelection(unit, channel);
+  if (!assetId) {
+    channel = "A相";
+    assetId = resolveAssetIdForSelection(unit, channel);
+    if ($("#trendChannelSelect")) $("#trendChannelSelect").value = channel;
+  }
+  if (assetId) setSelectedMeasurementAsset(assetId);
+  currentTrendProfile = PDCore.deriveTrendProfile(unit, channel, selectedAssetId);
   const targetSummary = $("#trendTargetSummary");
   const currentUnit = $("#trendCurrentUnit");
   const agingFactor = $("#currentAgingFactor");
@@ -895,7 +939,7 @@ function renderTrendTarget() {
   if (targetSummary) targetSummary.textContent = `当前分析：${unit} / ${channel} · 最近 90 天`;
   if (currentUnit) currentUnit.textContent = unit;
   if (agingFactor) agingFactor.textContent = currentTrendProfile.agingFactor.toFixed(2);
-  if (slopeLabel) slopeLabel.textContent = `当前窗口β：${currentTrendProfile.slope.toFixed(2)} pC/天`;
+  if (slopeLabel) slopeLabel.textContent = `当前窗口β：${currentTrendProfile.slope.toFixed(2)} ${currentTrendProfile.slopeUnit}`;
   const rows = $("#trendSummaryRows");
   if (rows) rows.innerHTML = currentTrendProfile.summary.map(item => `<tr${item.channel === channel ? ' class="selected"' : ""}><td>${item.channel}</td><td>${item.current.toLocaleString("zh-CN")}</td><td>${item.previous.toLocaleString("zh-CN")}</td><td>${item.slope.toFixed(2)}</td><td>${badge(item.level)}</td><td>${item.assessment}</td></tr>`).join("");
   requestAnimationFrame(() => {
@@ -909,7 +953,14 @@ function exportTrendData() {
     title: "长周期趋势分析",
     target: `${currentTrendProfile.unit} ${currentTrendProfile.channel}`,
     timeRange: "最近 90 天",
-    unit: "pC",
+    assetId: selectedAssetId,
+    datasetId: currentMeasurementContext?.datasetId || "—",
+    sampleAsOf: currentMeasurementContext?.sampleAsOf || "—",
+    qualityCode: currentMeasurementContext?.qualityCode || "—",
+    calibration: currentMeasurementContext?.calibration || null,
+    unit: currentTrendProfile.displayUnit,
+    slopeUnit: currentTrendProfile.slopeUnit,
+    ruleVersion: currentTrendProfile.ruleVersion,
     legend: ["Qm", "Qavg", "Ntotal", "环境温度", "相对湿度"],
     slope: currentTrendProfile.slope,
     summary: currentTrendProfile.summary,
@@ -992,27 +1043,17 @@ function renderAlarmViews() {
   renderAlarmManagement();
 }
 
-function applySelectedUnit() {
-  const profile = unitProfiles[selectedUnitIndex];
-  $$(".unit-card").forEach((card, index) => {
-    card.classList.toggle("selected", index === selectedUnitIndex);
-    card.classList.remove("normal", "warn", "danger");
-    card.classList.add(unitProfiles[index].levelClass);
-  });
-
-  const channel = $("#dashboardChannel");
-  if (channel) {
-    channel.innerHTML = `<option>${profile.channel}</option><option>${profile.unit} B相</option><option>${profile.unit} C相</option>`;
-  }
-
+function renderDashboardMeasurementSummary(profile) {
   const summary = $(".floating-card");
   if (summary) {
-    summary.querySelector("strong").textContent = `${profile.unit} 详细摘要`;
+    const classification = PDCore.classifyMeasurement(Number(profile.qm.replaceAll(",", "")), thresholdValues, currentDisplayPolicy);
+    summary.querySelector("strong").textContent = `${currentMeasurementContext?.unit || profile.unit} ${currentMeasurementContext?.channel || ""} 详细摘要`;
     summary.querySelector("dl").innerHTML = `
-      <dt>运行状态：</dt><dd>${profile.status}</dd>
-      <dt>最大放电量 Qm：</dt><dd>${profile.qm} pC</dd>
-      <dt>平均放电量 Qavg：</dt><dd>${profile.qavg} pC</dd>
-      <dt>趋势斜率 β：</dt><dd>${profile.beta} pC/h</dd>
+      <dt>运行状态：</dt><dd>${classification.level}</dd>
+      <dt>最大放电量 Qm：</dt><dd>${profile.qm} ${currentDisplayPolicy.unit}</dd>
+      <dt>平均放电量 Qavg：</dt><dd>${profile.qavg} ${currentDisplayPolicy.unit}</dd>
+      <dt>趋势斜率 β：</dt><dd>${profile.beta} ${currentDisplayPolicy.unit}/天</dd>
+      <dt>可信说明：</dt><dd>${currentDisplayPolicy.reason}</dd>
     `;
   }
 
@@ -1022,6 +1063,40 @@ function applySelectedUnit() {
     gauge.dataset.value = String(profile.gauge[index]);
     gauge.dataset.num = gaugeNumbers[index];
   });
+  if (gauges[0]) gauges[0].dataset.label = `最大放电量 Qm (${currentDisplayPolicy.unit})`;
+  if (gauges[1]) gauges[1].dataset.label = `平均放电量 Qavg (${currentDisplayPolicy.unit})`;
+  if (gauges[3]) gauges[3].dataset.label = `趋势斜率 β (${currentDisplayPolicy.unit}/天)`;
+}
+
+function applySelectedUnit() {
+  const profile = unitProfiles[selectedUnitIndex];
+  setSelectedMeasurementAsset(profile.assetId);
+  $$(".unit-card").forEach((card, index) => {
+    const cardProfile = unitProfiles[index];
+    const context = PDCore.getMeasurementContext(cardProfile.assetId);
+    const policy = PDCore.deriveDisplayPolicy(context);
+    const classification = PDCore.classifyMeasurement(Number(cardProfile.qm.replaceAll(",", "")), thresholdValues, policy);
+    card.classList.toggle("selected", index === selectedUnitIndex);
+    card.classList.remove("normal", "warn", "danger", "limited");
+    card.classList.add(classification.level === "正常" ? "normal"
+      : classification.level === "注意" ? "warn"
+        : ["异常", "危险"].includes(classification.level) ? "danger" : "limited");
+    const status = card.querySelector(".unit-head span");
+    const label = card.querySelector("small");
+    if (status) status.textContent = classification.level;
+    if (label) label.textContent = `Qm (${policy.unit})`;
+  });
+
+  const channel = $("#dashboardChannel");
+  if (channel) {
+    const options = ["A相", "B相", "C相"]
+      .map(item => ({ item, assetId: resolveAssetIdForSelection(profile.unit, item) }))
+      .filter(item => item.assetId);
+    channel.innerHTML = options.map(item => `<option value="${item.assetId}">${profile.unit.replace(/\s*机组/, "")}-${item.item}</option>`).join("");
+    channel.value = profile.assetId;
+  }
+
+  renderDashboardMeasurementSummary(profile);
 }
 
 function selectUnit(index) {
@@ -1092,42 +1167,66 @@ function applyAlarmAction(action) {
   return true;
 }
 
-function renderDiagnosisDefect(index = selectedDiagnosisIndex) {
-  selectedDiagnosisIndex = index;
-  const defect = diagnosisDefects[index];
-  if (!defect) return;
-  const defectList = $("#defectList");
-  if (defectList) {
-    defectList.innerHTML = diagnosisDefects.map((item, itemIndex) => {
-      const hot = itemIndex === index ? " active" : "";
-      const percent = item.percent <= 1 ? 1 : item.percent;
-      return `<button class="defect-row${hot}" data-defect-index="${itemIndex}">
-        <span>${itemIndex + 1}</span>
-        <strong>${item.name} <small>${item.english}</small></strong>
-        <em>${item.confidence}<i style="--p:${percent}%"></i></em>
-        <b>详情</b>
-      </button>`;
-    }).join("");
+function setDiagnosisActionsEnabled(enabled) {
+  ["exportDiagPdf", "printDiagReport"].forEach(id => {
+    const button = $("#" + id);
+    if (button) button.disabled = !enabled;
+  });
+}
+
+function renderDiagnosisPlaceholder() {
+  selectedDiagnosisIndex = 0;
+  if ($("#defectList")) $("#defectList").innerHTML = '<p class="diagnosis-placeholder">尚未执行诊断</p>';
+  if ($("#defectCause")) $("#defectCause").innerHTML = '<div class="cause-copy"><b>诊断分析</b><p>完成诊断后显示成因分析。</p></div>';
+  if ($("#diagConclusion")) $("#diagConclusion").innerHTML = '等待诊断结果<br><small>尚未执行诊断</small>';
+  if ($("#diagAdvice")) $("#diagAdvice").innerHTML = "<li>完成诊断后显示处置建议。</li>";
+  const preview = $("#diagReportPreview");
+  if (preview) {
+    preview.hidden = true;
+    preview.innerHTML = '<p class="diagnosis-placeholder">诊断尚未完成</p>';
   }
-  $("#diagConclusion").innerHTML = `导缺陷类型：${defect.name}<br><small>严重程度：${defect.severity}　置信度：${defect.confidence}</small>`;
-  $("#defectCause").innerHTML = `<div class="cause-copy"><b>绝缘物理损伤成因分析（${defect.name}）</b><ol>${defect.causes.map(item => `<li>${item}</li>`).join("")}</ol></div><div class="slot-schematic" aria-hidden="true"><span></span><i></i><em></em></div>`;
-  $("#diagAdvice").innerHTML = defect.advice.map(item => `<li>${item}</li>`).join("");
+}
+
+function renderDiagnosisDefect(index = selectedDiagnosisIndex) {
+  const probabilities = diagnosisContext.probabilities || [];
+  if (!diagnosisContext.completed || !probabilities.length) return;
+  selectedDiagnosisIndex = Math.max(0, Math.min(index, probabilities.length - 1));
+  const selected = probabilities[selectedDiagnosisIndex];
+  $("#defectList").innerHTML = probabilities.map((item, itemIndex) => `
+    <button class="defect-row${itemIndex === selectedDiagnosisIndex ? " active" : ""}" data-defect-index="${itemIndex}">
+      <span>${itemIndex + 1}</span>
+      <strong>${item.name} <small>${item.english}</small></strong>
+      <em>${item.confidence}%<i style="--p:${Math.max(1, item.confidence)}%"></i></em>
+      <b>详情</b>
+    </button>`).join("");
+  $("#diagConclusion").innerHTML = `诊断结论：${diagnosisContext.conclusion}<br><small>严重程度：${diagnosisContext.severity}　置信度：${diagnosisContext.confidence}</small>`;
+  $("#defectCause").innerHTML = `<div class="cause-copy"><b>绝缘物理损伤成因分析（${selected.name}）</b><ol>${diagnosisContext.causes.map(item => `<li>${item}</li>`).join("")}</ol></div><div class="slot-schematic" aria-hidden="true"><span></span><i></i><em></em></div>`;
+  $("#diagAdvice").innerHTML = diagnosisContext.advice.map(item => `<li>${item}</li>`).join("");
+}
+
+function renderDiagnosisResult(result) {
+  if (result.determinacy === "limited") {
+    $("#defectList").innerHTML = '<p class="diagnosis-placeholder">当前数据不满足确定性诊断条件</p>';
+    $("#diagConclusion").innerHTML = `${result.conclusion}<br><small>质量码：${result.qualityCode}　校准状态：${result.calibrationState}</small>`;
+    $("#defectCause").innerHTML = `<div class="cause-copy"><b>受限原因</b><ol>${result.causes.map(item => `<li>${item}</li>`).join("")}</ol></div>`;
+    $("#diagAdvice").innerHTML = result.advice.map(item => `<li>${item}</li>`).join("");
+    renderDiagnosisReport();
+    return;
+  }
+  selectedDiagnosisIndex = 0;
+  renderDiagnosisDefect(0);
   renderDiagnosisReport();
 }
 
 function collectDiagnosisContext(completed = diagnosisContext.completed) {
-  const defect = diagnosisDefects[selectedDiagnosisIndex] || diagnosisDefects[0];
   return {
+    ...diagnosisContext,
     unit: selectedDiagUnit,
     channel: selectedDiagChannel,
-    defect: defect.name,
-    severity: defect.severity,
-    confidence: defect.confidence,
-    conclusion: `疑似${defect.name}，严重程度${defect.severity}，模型置信度${defect.confidence}`,
-    advice: [...defect.advice],
     reviewer: $("#diagReviewer")?.value || "admin",
     signature: $("#diagSignature")?.value.trim() || "未签名",
-    date: $("#diagReportDate")?.value || new Date().toISOString().slice(0, 10),
+    date: $("#diagReportDate")?.value || PDCore.todayInShanghai(),
+    dateSource: $("#diagReportDate")?.dataset.source || "system-default",
     note: $("#diagReviewNote")?.value.trim() || "",
     completed,
   };
@@ -1157,14 +1256,41 @@ function exportDiagnosisReport() {
 function updateDiagnosisTarget() {
   selectedDiagUnit = $("#diagUnitSelect")?.value || selectedDiagUnit;
   selectedDiagChannel = $("#diagChannelSelect")?.value || selectedDiagChannel;
+  let assetId = resolveAssetIdForSelection(selectedDiagUnit, selectedDiagChannel);
+  if (!assetId) {
+    selectedDiagChannel = "A相";
+    assetId = resolveAssetIdForSelection(selectedDiagUnit, selectedDiagChannel);
+    if ($("#diagChannelSelect")) $("#diagChannelSelect").value = selectedDiagChannel;
+  }
+  if (assetId) setSelectedMeasurementAsset(assetId);
+  diagnosisRunToken += 1;
+  clearTimeout(diagnosisTimer);
+  diagnosisTimer = null;
   $("#diagUnitText").textContent = selectedDiagUnit;
   $("#diagChannelText").textContent = selectedDiagChannel;
+  $("#diagReportTarget").textContent = `${selectedDiagUnit}　${selectedDiagChannel}通道`;
   $("#diagStage").textContent = "待启动";
   $("#diagStatus").textContent = `已选择 ${selectedDiagUnit} ${selectedDiagChannel}，可启动专家诊断。`;
   $("#diagProgressBar").style.width = "0%";
   $$(".pipeline span").forEach(item => item.classList.remove("active", "done"));
-  diagnosisContext.completed = false;
-  renderDiagnosisReport();
+  diagnosisContext = {
+    assetId: selectedAssetId,
+    unit: selectedDiagUnit,
+    channel: selectedDiagChannel,
+    datasetId: currentMeasurementContext?.datasetId || PDCore.SAMPLE_DATASET_ID,
+    window: $("#diagWindowText")?.textContent || "最近1000个工频周期",
+    algorithmVersion: "PD-DEMO-1.0",
+    probabilities: [],
+    advice: [],
+    reviewer: $("#diagReviewer")?.value || "admin",
+    signature: $("#diagSignature")?.value.trim() || "未签名",
+    date: $("#diagReportDate")?.value || PDCore.todayInShanghai(),
+    dateSource: $("#diagReportDate")?.dataset.source || "system-default",
+    note: $("#diagReviewNote")?.value.trim() || "",
+    completed: false,
+  };
+  renderDiagnosisPlaceholder();
+  setDiagnosisActionsEnabled(false);
   const startButton = $("#startDiagnosis");
   if (startButton) {
     startButton.disabled = false;
@@ -1174,6 +1300,7 @@ function updateDiagnosisTarget() {
 
 function runDiagnosis() {
   updateDiagnosisTarget();
+  const runToken = ++diagnosisRunToken;
   const unit = selectedDiagUnit;
   const channel = selectedDiagChannel;
   const windowText = $("#diagWindowText")?.textContent || "最近1000个工频周期";
@@ -1194,6 +1321,7 @@ function runDiagnosis() {
     startButton.innerHTML = "诊断进行中<br><small id=\"diagTime\">0.00 s</small>";
   }
   const advance = () => {
+    if (runToken !== diagnosisRunToken) return;
     const [stage, text, width, seconds] = stages[step];
     $("#diagStage").textContent = stage;
     $("#diagStatus").textContent = text;
@@ -1206,7 +1334,7 @@ function runDiagnosis() {
     });
     if (step < stages.length - 1) {
       step += 1;
-      setTimeout(advance, 280);
+      diagnosisTimer = setTimeout(advance, 280);
     } else {
       $$(".pipeline span").forEach(item => {
         item.classList.remove("active");
@@ -1218,8 +1346,10 @@ function runDiagnosis() {
       }
       if (diagUnitSelect) diagUnitSelect.disabled = false;
       if (diagChannelSelect) diagChannelSelect.disabled = false;
-      diagnosisContext.completed = true;
-      renderDiagnosisDefect(selectedDiagnosisIndex);
+      const result = PDCore.deriveDiagnosisResult(diagnosisContext);
+      diagnosisContext = { ...diagnosisContext, ...result, completed: true };
+      renderDiagnosisResult(result);
+      setDiagnosisActionsEnabled(true);
       drawAll();
     }
   };
@@ -1670,6 +1800,40 @@ function renderHistoryRows(rows) {
   body.innerHTML = rows.length
     ? rows.map((r, i) => `<tr data-history-index="${i}"><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td><td>${badge(r[6])}</td><td><button class="ghost" data-action="replay" data-history-index="${i}">回放</button></td></tr>`).join("")
     : `<tr><td colspan="8" class="empty-state">当前条件下没有历史记录</td></tr>`;
+  const hasRows = rows.length > 0;
+  $("#historyPlayBtn").disabled = !hasRows;
+  $("#historyPauseBtn").disabled = !hasRows;
+  if (!hasRows) $("#exportNote").textContent = `当前条件：${currentHistoryFilters.start.replace("T", " ")} 至 ${currentHistoryFilters.end.replace("T", " ")} · ${currentHistoryFilters.unitChannel} · ${currentHistoryFilters.level}；无可导出记录。`;
+}
+
+function readHistoryFilters() {
+  return PDCore.normalizeHistoryFilters({
+    start: $("#historyStartTime")?.value,
+    end: $("#historyEndTime")?.value,
+    unitChannel: $("#historyUnitChannelFilter")?.value,
+    level: $("#historyLevelFilter")?.value,
+  });
+}
+
+function setHistoryRangeError(message = "") {
+  const error = $("#historyRangeError");
+  if (!error) return;
+  error.textContent = message;
+  error.hidden = !message;
+  ["historyStartTime", "historyEndTime"].forEach(id => $("#" + id)?.toggleAttribute("aria-invalid", Boolean(message)));
+}
+
+function formatHistoryInput(timestamp) {
+  return PDCore.formatShanghaiDateTime(timestamp).replace(" ", "T").slice(0, 16);
+}
+
+function applyHistoryQuickRange(hours) {
+  const latest = Math.max(...historyRows.map(row => PDCore.parseShanghaiDateTime(row[0])));
+  $("#historyEndTime").value = formatHistoryInput(latest);
+  $("#historyStartTime").value = formatHistoryInput(latest - hours * 60 * 60 * 1000);
+  const rangeLabel = hours === 24 ? "24 小时" : hours === 168 ? "7 天" : "30 天";
+  $("#historyRangeAnchor").textContent = `已按样例截止时间 ${PDCore.formatShanghaiDateTime(PDCore.SAMPLE_AS_OF)}（UTC+8）计算近 ${rangeLabel}`;
+  setHistoryRangeError();
 }
 
 function stopHistoryPlayback() {
@@ -1689,6 +1853,54 @@ function startHistoryPlayback(row, index = 0) {
   }, 260);
   $("#historyPrpd").dataset.frame = String(historyReplaySeed);
   drawPrpd("historyPrpd");
+}
+
+function getFullscreenState() {
+  const fullscreenTarget = document.documentElement;
+  return {
+    fullscreenTarget,
+    active: document.fullscreenElement === fullscreenTarget,
+  };
+}
+
+function syncFullscreenState() {
+  const { active } = getFullscreenState();
+  const button = $("#fullscreenBtn");
+  if (!button) return;
+  button.setAttribute("aria-label", active ? "退出全屏" : "进入全屏");
+  button.title = active ? "退出全屏" : "全屏";
+  requestAnimationFrame(drawAll);
+}
+
+async function toggleFullscreen() {
+  const { fullscreenTarget, active } = getFullscreenState();
+  try {
+    if (active) {
+      if (!document.exitFullscreen) {
+        showToast("当前浏览器不支持全屏模式");
+        return false;
+      }
+      await document.exitFullscreen();
+      return true;
+    }
+    if (!fullscreenTarget?.requestFullscreen) {
+      showToast("当前浏览器不支持全屏模式");
+      return false;
+    }
+    await fullscreenTarget.requestFullscreen();
+    return true;
+  } catch {
+    showToast("全屏切换失败，请重试");
+    syncFullscreenState();
+    return false;
+  }
+}
+
+function initFullscreen() {
+  $("#fullscreenBtn")?.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", syncFullscreenState);
+  document.addEventListener("fullscreenerror", syncFullscreenState);
+  syncFullscreenState();
 }
 
 function initNav() {
@@ -1713,6 +1925,11 @@ function initNav() {
       }
     });
   });
+  $("#dashboardChannel")?.addEventListener("change", event => {
+    setSelectedMeasurementAsset(event.target.value);
+    renderDashboardMeasurementSummary(unitProfiles[selectedUnitIndex]);
+    requestAnimationFrame(drawAll);
+  });
   const alarmBell = $("#alarmBell");
   alarmBell?.addEventListener("click", () => {
     alarmManagementFilter = "open";
@@ -1732,6 +1949,13 @@ function initNav() {
     });
   });
   $("#goAlarmBtn")?.addEventListener("click", () => setPage("alarm"));
+  $("#goDeviceManagementBtn")?.addEventListener("click", () => {
+    const deviceNav = $('#mainNav .nav-btn[data-page="device"]');
+    const deviceRows = $("#deviceRows");
+    if (!deviceNav || !deviceRows) { showToast("设备管理入口不可用，请刷新页面后重试"); return; }
+    setPage("device");
+    requestAnimationFrame(() => { const selectedRow = $("#deviceRows tr.selected"); (selectedRow || deviceRows).focus(); });
+  });
   $$(".dashboard-alarm-tabs button").forEach(btn => {
     btn.addEventListener("click", () => {
       dashboardAlarmFilter = btn.dataset.alarmFilter;
@@ -1762,6 +1986,8 @@ function initNav() {
     if (!button) return;
     const index = Number(button.dataset.historyIndex);
     const row = currentHistoryRows[index];
+    const rowAssetId = resolveAssetIdForSelection(row[1], row[2]);
+    if (rowAssetId) setSelectedMeasurementAsset(rowAssetId);
     $$("#historyRows tr").forEach(tr => tr.classList.toggle("selected", Number(tr.dataset.historyIndex) === index));
     startHistoryPlayback(row, index);
     $("#exportNote").textContent = `当前导出对象：${row[1]} ${row[2]} ${row[0]}。`;
@@ -1770,37 +1996,46 @@ function initNav() {
     drawAll();
   });
   $("#historyQueryBtn")?.addEventListener("click", () => {
+    const nextFilters = readHistoryFilters();
+    const validation = PDCore.validateHistoryRange(nextFilters.start, nextFilters.end);
+    if (!validation.valid) {
+      setHistoryRangeError(validation.error);
+      $("#historyNotice").textContent = validation.error;
+      return;
+    }
     stopHistoryPlayback();
-    const unitChannel = $("#historyUnitChannelFilter").value;
-    const level = $("#historyLevelFilter").value;
-    const filtered = PDCore.filterHistoryRows(historyRows, unitChannel, level);
+    setHistoryRangeError();
+    currentHistoryFilters = nextFilters;
+    const filtered = PDCore.filterHistoryRows(historyRows, currentHistoryFilters);
     renderHistoryRows(filtered);
-    $("#historyNotice").textContent = `已按“${unitChannel} / ${level}”查询，共 ${filtered.length} 条记录。`;
+    $("#historyRangeSummary").textContent = `${currentHistoryFilters.start.replace("T", " ")} 至 ${currentHistoryFilters.end.replace("T", " ")} · UTC+8 · ${filtered.length} 条`;
+    $("#historyNotice").textContent = `查询完成：${currentHistoryFilters.unitChannel} / ${currentHistoryFilters.level}，共 ${filtered.length} 条记录。`;
     showToast(`历史数据查询完成：${filtered.length} 条`);
   });
   $("#historyResetBtn")?.addEventListener("click", () => {
     stopHistoryPlayback();
-    $("#historyUnitChannelFilter").value = "全部机组";
-    $("#historyLevelFilter").value = "全部级别";
-    renderHistoryRows(historyRows);
-    $("#historyNotice").textContent = "查询条件已重置，请选择历史记录进行回放或查看详情。";
+    currentHistoryFilters = { ...DEFAULT_HISTORY_FILTERS };
+    $("#historyStartTime").value = currentHistoryFilters.start;
+    $("#historyEndTime").value = currentHistoryFilters.end;
+    $("#historyUnitChannelFilter").value = currentHistoryFilters.unitChannel;
+    $("#historyLevelFilter").value = currentHistoryFilters.level;
+    setHistoryRangeError();
+    renderHistoryRows(PDCore.filterHistoryRows(historyRows, currentHistoryFilters));
+    $("#historyRangeSummary").textContent = "时间按 UTC+8（Asia/Shanghai）查询，单次最多 90 天。";
+    $("#historyNotice").textContent = "查询条件已重置，请选择历史记录进行回放。";
     $$("#historyRows tr").forEach(row => row.classList.remove("selected"));
     showToast("历史查询条件已重置");
   });
+  $$('[data-history-range-hours]').forEach(button => button.addEventListener("click", () => applyHistoryQuickRange(Number(button.dataset.historyRangeHours))));
   $("#historyPlayBtn")?.addEventListener("click", () => { const row = currentHistoryRows[0]; if (row) startHistoryPlayback(row, 0); else showToast("当前没有可回放记录"); });
   $("#historyPauseBtn")?.addEventListener("click", () => { stopHistoryPlayback(); $("#historyNotice").textContent = "回放已暂停，可继续播放或选择其他记录。"; showToast("PRPD 回放已暂停"); });
   $("#historySpeed")?.addEventListener("change", event => { $("#historyNotice").textContent = `回放速度已调整为 ${event.target.value}。`; });
   $("#trendUnitSelect")?.addEventListener("change", renderTrendTarget);
   $("#trendChannelSelect")?.addEventListener("change", renderTrendTarget);
-  $("#exportTrendChartBtn")?.addEventListener("click", event => runButtonAction(event.currentTarget, "生成中…", async () => { exportTrendData(); showToast(`已导出 ${currentTrendProfile.unit} ${currentTrendProfile.channel} 趋势数据`); }));
-  $("#applyFilterBtn")?.addEventListener("click", event => runButtonAction(event.currentTarget, "应用中…", async () => { if (applyFilterConfig()) showToast(`滤波器已应用至 ${PDCore.formatDevicePath(deviceContext)}`); }));
-  $("#exportDiagPdf")?.addEventListener("click", event => runButtonAction(event.currentTarget, "生成中…", async () => { if (exportDiagnosisReport()) showToast("诊断报告已下载"); }));
+  $("#exportTrendChartBtn")?.addEventListener("click", event => runButtonAction(event.currentTarget, "生成中…", async () => { exportTrendData(); showToast(`已导出 ${currentTrendProfile.unit} ${currentTrendProfile.channel} 趋势数据`); return { ok: true }; }));
+  $("#applyFilterBtn")?.addEventListener("click", event => runButtonAction(event.currentTarget, "应用中…", async () => { if (!applyFilterConfig()) return { ok: false, error: "滤波参数校验或保存失败" }; showToast(`滤波器已应用至 ${PDCore.formatDevicePath(deviceContext)}`); return { ok: true }; }));
+  $("#exportDiagPdf")?.addEventListener("click", event => runButtonAction(event.currentTarget, "生成中…", async () => { if (!exportDiagnosisReport()) return { ok: false, error: "请先完成诊断并确认报告信息" }; showToast("诊断报告已下载"); return { ok: true }; }));
   $("#printDiagReport")?.addEventListener("click", () => { if (!diagnosisContext.completed) { showToast("请先完成诊断，再打印报告"); return; } renderDiagnosisReport(); $("#diagReportPreview").hidden = false; $("#diagStatus").textContent = "已打开同版报告打印预览。"; window.print(); });
-  $("#fullscreenBtn")?.addEventListener("click", async () => {
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
-    else if (document.exitFullscreen) await document.exitFullscreen();
-    else showToast("当前浏览器不支持全屏模式");
-  });
   $("#prpdInspectBtn")?.addEventListener("click", () => showToast("已显示 3#机组 A相 PRPD 图谱摘要"));
   $("#prpdZoomBtn")?.addEventListener("click", event => {
     const chart = $("#prpdChart");
@@ -1842,7 +2077,8 @@ function initNav() {
     $("#diagStage").textContent = "报告预览";
     $("#diagStatus").textContent = diagnosisContext.completed ? "正在预览已完成的诊断报告。" : "正在预览报告草稿，完成诊断后才可下载。";
   });
-  ["diagReviewNote", "diagReviewer", "diagSignature", "diagReportDate"].forEach(id => $("#" + id)?.addEventListener("input", renderDiagnosisReport));
+  ["diagReviewNote", "diagReviewer", "diagSignature"].forEach(id => $("#" + id)?.addEventListener("input", renderDiagnosisReport));
+  $("#diagReportDate")?.addEventListener("input", event => { event.currentTarget.dataset.source = "user-modified"; renderDiagnosisReport(); });
   document.addEventListener("click", () => $("#exportMenu")?.classList.remove("open"));
   $$(".side-menu button").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -2224,13 +2460,14 @@ document.addEventListener("DOMContentLoaded", () => {
   initSystemLogs();
   initDeviceTree();
   initNav();
+  initFullscreen();
   applySelectedUnit();
   renderTrendTarget();
+  const reportDate = $("#diagReportDate");
+  if (reportDate && !reportDate.value) { reportDate.value = PDCore.todayInShanghai(); reportDate.dataset.source = "system-default"; }
   updateDiagnosisTarget();
-  renderDiagnosisDefect(0);
   tickClock();
   setInterval(tickClock, 1000);
-  renderFreshness();
-  setInterval(renderFreshness, 5000);
+  renderSampleProvenance();
   setTimeout(drawAll, 50);
 });

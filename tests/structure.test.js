@@ -7,6 +7,7 @@ const root = path.join(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
 test("登录视图与系统主体具有稳定节点", () => {
   for (const id of [
@@ -154,6 +155,18 @@ test("仅历史、趋势和数据处理页面暴露设备上下文容器", () =>
   assert.match(html, /id=["']currentDevicePath["']/);
 });
 
+test("设备树仅允许通道节点选择并同步长周期趋势目标", () => {
+  assert.match(app, /node\.type\s*===\s*["']channel["'][\s\S]*data-device-id/);
+  assert.match(app, /button\[data-device-id\][\s\S]*selectDeviceNode/);
+  assert.match(app, /function syncTrendTargetFromDeviceTree\(/);
+  assert.match(app, /PDCore\.resolveTrendTarget\(deviceContext\)/);
+  assert.match(app, /trendUnitSelect[\s\S]*target\.unit/);
+  assert.match(app, /trendChannelSelect[\s\S]*target\.channel/);
+  assert.match(app, /selectDeviceNode\([\s\S]*syncTrendTargetFromDeviceTree\(\)/);
+  assert.match(app, /syncTrendTargetFromDeviceTree\([\s\S]*renderTrendTarget\(\)/);
+  assert.match(css, /\.device-tree-branch[\s\S]*cursor:\s*default/);
+});
+
 test("历史列表只保留回放动作并支持条件筛选和动态播放", () => {
   assert.doesNotMatch(app, /data-action=["']detail["']/);
   assert.match(html, /id=["']historyUnitChannelFilter["']/);
@@ -162,6 +175,21 @@ test("历史列表只保留回放动作并支持条件筛选和动态播放", ()
   assert.match(app, /function renderHistoryRows\(/);
   assert.match(app, /historyPlaybackTimer/);
   assert.match(app, /historyReplaySeed\s*\+=/);
+});
+
+test("history page exposes bounded datetime and quick-range controls", () => {
+  for (const id of ["historyStartTime", "historyEndTime", "historyRangeError", "historyRangeSummary"]) {
+    assert.match(html, new RegExp(`id=["']${id}["']`));
+  }
+  for (const hours of ["24", "168", "720"]) assert.match(html, new RegExp(`data-history-range-hours=["']${hours}["']`));
+  assert.match(app, /validateHistoryRange/);
+  assert.match(app, /currentHistoryFilters/);
+});
+
+test("every history export uses currentHistoryFilters", () => {
+  assert.match(app, /serializeHistoryCsv\(currentHistoryRows, currentHistoryFilters\)/);
+  assert.match(app, /buildHistoryExportPayload\(currentHistoryRows, currentHistoryFilters\)/);
+  assert.match(app, /filters: currentHistoryFilters/);
 });
 
 test("原始脉冲波形面板不再提供装饰性关闭按钮", () => {
@@ -286,6 +314,18 @@ test("设备配置使用数值校验并刷新后保留", () => {
   assert.match(app, /function loadDevices\(/);
 });
 
+test("system hardware configuration is read-only and links to device management", () => {
+  for (const id of ["systemHardwareRows", "goDeviceManagementBtn", "systemHardwareHint"]) assert.match(html, new RegExp(`id=["']${id}["']`));
+  const start = html.indexOf('<section class="panel sys-pane" id="sys-config">');
+  const end = html.indexOf('<section class="panel sys-pane" id="sys-users">');
+  const systemConfig = html.slice(start, end);
+  assert.doesNotMatch(systemConfig, /<input|<select|contenteditable/);
+  assert.match(app, /renderSystemHardwareOverview/);
+  assert.match(app, /goDeviceManagementBtn/);
+  assert.match(app, /setPage\("device"\)/);
+  assert.match(app, /设备管理入口不可用/);
+});
+
 test("硬件自检支持启动、取消、失败模拟和重试", () => {
   for (const id of ["startSelfCheckBtn", "cancelSelfCheckBtn", "retrySelfCheckBtn", "selfCheckFailureMode", "selfCheckStatus", "selfCheckProgress", "selfCheckRows"]) assert.match(html, new RegExp(`id=["']${id}["']`));
   assert.match(app, /PDCore\.summarizeSelfCheck/);
@@ -309,10 +349,106 @@ test("system logs expose stable query, detail, and export controls", () => {
   assert.match(app, /serializeSystemLogsCsv/);
 });
 
-test("shared asynchronous feedback exposes freshness and retryable panel states", () => {
+test("report date is initialized from Shanghai today instead of fixed HTML", () => {
+  assert.doesNotMatch(html, /id=["']diagReportDate["'][^>]*value=/);
+  assert.match(app, /diagReportDate[^\n]*todayInShanghai|todayInShanghai[^\n]*diagReportDate/);
+  assert.match(app, /dateSource/);
+  assert.match(html, /时间（UTC\+8）/);
+  assert.doesNotMatch(`${app}\n${fs.readFileSync(path.join(root, "core.js"), "utf8")}`, /new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/);
+});
+
+test("operation feedback cannot alter frozen sample provenance", () => {
   for (const id of ["lastDataUpdated", "staleDataWarning"]) assert.match(html, new RegExp(`id=["']${id}["']`));
-  assert.match(app, /function markDataUpdated\(/);
+  const runAction = app.slice(app.indexOf("async function runButtonAction"), app.indexOf("function requestConfirmation"));
+  const appendLog = app.slice(app.indexOf("function appendSystemLog"), app.indexOf("function loadSystemLogs"));
+  assert.match(app, /function renderSampleProvenance\(/);
+  assert.doesNotMatch(runAction, /renderSampleProvenance/);
+  assert.doesNotMatch(appendLog, /renderSampleProvenance/);
+  assert.match(runAction, /normalizeOperationResult/);
   assert.match(app, /function setPanelState\(/);
   assert.match(app, /data-state/);
   assert.match(css, /\.panel-state-overlay/);
+});
+
+test("prototype explicitly disclaims production authentication and persistence", () => {
+  const evidence = `${html}\n${readme}`;
+  for (const phrase of ["演示认证", "停用演示用户不会改变固定 admin 登录", "localStorage", "本地日志可被修改", "生产环境必须接入后端身份认证", "RBAC", "会话控制", "不可篡改审计", "服务端持久化"]) {
+    assert.match(evidence, new RegExp(phrase));
+  }
+});
+
+test("measurement pages expose one shared auditable trust strip", () => {
+  for (const id of [
+    "measurementTrustBar", "trustAssetId", "trustCalibration", "trustCertificate",
+    "trustQuality", "trustDisplayUnit", "trustSampleAsOf",
+  ]) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), id);
+  }
+  assert.match(app, /function renderMeasurementTrustBar/);
+  assert.match(app, /PDCore\.getMeasurementContext/);
+  assert.match(app, /PDCore\.deriveDisplayPolicy/);
+});
+
+test("dashboard and trend values consume the selected measurement context", () => {
+  assert.match(app, /currentMeasurementContext/);
+  assert.match(app, /currentDisplayPolicy/);
+  assert.match(app, /currentTrendProfile\.slopeUnit/);
+  assert.match(app, /selectedAssetId/);
+});
+
+test("entering trend page synchronizes the trust context with trend selectors", () => {
+  const setPage = app.slice(app.indexOf("function setPage("), app.indexOf("function alarmNo("));
+  assert.match(setPage, /pageId\s*===\s*["']trend["'][\s\S]*renderTrendTarget\(\)/);
+});
+
+test("history pulse values rerender when the measurement context changes", () => {
+  const setter = app.slice(app.indexOf("function setSelectedMeasurementAsset("), app.indexOf("function renderMeasurementTrustBar("));
+  assert.match(setter, /currentPage\s*===\s*["']history["'][\s\S]*renderWaveSelection/);
+});
+
+test("sample provenance never pretends to be live acquisition", () => {
+  assert.doesNotMatch(app, /lastAcquisitionUpdatedAt\s*=\s*new Date\(\)\.toISOString\(\)/);
+  assert.doesNotMatch(app, /采集数据：\$\{ageLabel\}/);
+  assert.match(html, /冻结样例数据/);
+  assert.match(html, /样例近24小时/);
+  assert.match(html, /样例近7天/);
+  assert.match(html, /样例近30天/);
+  assert.match(app, /PDCore\.SAMPLE_AS_OF/);
+});
+
+test("history quick range exposes its fixed sample anchor", () => {
+  assert.match(html, /id=["']historyRangeAnchor["']/);
+  assert.match(app, /historyRangeAnchor/);
+  assert.match(app, /样例截止时间/);
+});
+
+test("diagnosis starts neutral and renders only a completed core result", () => {
+  assert.doesNotMatch(html, /严重程度：严重[^<]*置信度：88%/);
+  assert.match(html, /尚未执行诊断/);
+  assert.match(app, /PDCore\.deriveDiagnosisResult/);
+  assert.match(app, /diagnosisRunToken/);
+  assert.match(app, /renderDiagnosisPlaceholder/);
+});
+
+test("diagnosis export actions remain unavailable until completion", () => {
+  assert.match(html, /id=["']exportDiagPdf["'][^>]*disabled/);
+  assert.match(html, /id=["']printDiagReport["'][^>]*disabled/);
+  assert.match(app, /setDiagnosisActionsEnabled/);
+});
+
+test("diagnosis target changes immediately update the report cover", () => {
+  const updateTarget = app.slice(app.indexOf("function updateDiagnosisTarget("), app.indexOf("function runDiagnosis("));
+  assert.match(updateTarget, /diagReportTarget[\s\S]*selectedDiagUnit[\s\S]*selectedDiagChannel/);
+});
+
+test("README distinguishes prototype behavior from production services", () => {
+  assert.match(readme, /OIDC|统一身份认证/);
+  assert.match(readme, /服务端会话/);
+  assert.match(readme, /数据库持久化/);
+  assert.match(readme, /采集心跳/);
+  assert.match(readme, /算法服务/);
+  assert.match(readme, /当前版本不模拟/);
+  for (const field of ["assetId", "datasetId", "sampleAsOf", "qualityCode", "calibration", "algorithmVersion", "ruleVersion"]) {
+    assert.match(readme, new RegExp(field));
+  }
 });

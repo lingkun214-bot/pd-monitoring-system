@@ -127,6 +127,17 @@ body {
 
 .app-shell { height: 100vh; padding-bottom: 42px; position: relative; overflow: hidden; }
 
+:root:fullscreen {
+  background: var(--bg);
+}
+
+:root:fullscreen #appShell {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
 .topbar {
   position: relative;
   z-index: 40;
@@ -227,6 +238,23 @@ main {
   overflow: auto;
   scrollbar-color: rgba(26, 137, 255, 0.65) rgba(2, 12, 28, 0.8);
 }
+.measurement-trust-bar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(46, 151, 255, 0.42);
+  border-left: 3px solid #24d69a;
+  border-radius: 5px;
+  background: linear-gradient(90deg, rgba(8, 54, 96, 0.92), rgba(3, 25, 55, 0.92));
+  color: #8fb6dc;
+  font-size: 11px;
+}
+.measurement-trust-bar[hidden] { display: none; }
+.measurement-trust-bar[data-state="limited"] { border-left-color: #ffd34d; }
+.measurement-trust-bar span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.measurement-trust-bar strong { margin-left: 4px; color: #eaf7ff; font-size: 12px; }
 .page { display: none; }
 .page.active { display: block; }
 
@@ -266,8 +294,10 @@ main {
 .device-tree.collapsed .device-tree-summary { display: block; padding-top: 14px; }
 #deviceTreeSearch { width: 100%; height: 30px; margin-bottom: 8px; color: var(--text); border: 1px solid var(--line2); background: #03172e; }
 .device-multi { display: block; margin-bottom: 8px; color: var(--muted); font-size: 11px; }
-.device-tree-node { width: 100%; margin: 2px 0; padding: 6px 7px; text-align: left; color: #cfe9ff; border: 0; border-radius: 3px; background: transparent; cursor: pointer; }
-.device-tree-node:hover, .device-tree-node[aria-pressed="true"] { color: white; background: rgba(8, 121, 235, .4); }
+.device-tree-node { width: 100%; margin: 2px 0; padding: 6px 7px; text-align: left; color: #cfe9ff; border: 0; border-radius: 3px; background: transparent; }
+button.device-tree-node { cursor: pointer; }
+button.device-tree-node:hover, button.device-tree-node[aria-pressed="true"] { color: white; background: rgba(8, 121, 235, .4); }
+.device-tree-branch { cursor: default; color: #88a9c6; }
 .device-tree-node[data-level="1"] { padding-left: 16px; }
 .device-tree-node[data-level="2"] { padding-left: 28px; }
 .device-tree-node[data-level="3"] { padding-left: 40px; }
@@ -384,6 +414,7 @@ main {
 .unit-card.normal .unit-head span, .pill.ok { background: #058934; color: #e9fff0; }
 .unit-card.warn .unit-head span, .pill.warn { background: #d6a900; color: #1c1700; }
 .unit-card.danger .unit-head span, .pill.bad { background: #d52222; color: #fff; }
+.unit-card.limited .unit-head span, .pill.limited { background: #586b7f; color: #f1f6fb; }
 .pill.risk { background: #c71929; color: #fff; }
 .metric { font-size: 30px; font-weight: 800; margin-top: 6px; }
 .spark { position: absolute; right: 15px; bottom: 12px; width: 135px; height: 45px; }
@@ -1251,6 +1282,15 @@ canvas { width: 100%; height: 100%; display: block; }
 }
 .statusbar i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--green); margin-left: 6px; box-shadow: 0 0 8px var(--green); }
 .stale-data-warning { color: #ffd34d; font-weight: 700; }
+.diagnosis-placeholder {
+  margin: 0;
+  padding: 22px 12px;
+  color: #86a9c9;
+  text-align: center;
+  border: 1px dashed rgba(91, 153, 211, 0.42);
+  border-radius: 5px;
+  background: rgba(4, 24, 48, 0.54);
+}
 
 @media (max-width: 1450px) {
   .topbar { grid-template-columns: minmax(185px, 220px) minmax(0, 1fr) max-content; }
@@ -1351,3 +1391,19 @@ canvas { width: 100%; height: 100%; display: block; }
   .threshold-range-preview { grid-template-columns: 1fr; }
   .modal-form > div:not(.modal-actions) { grid-template-columns: 1fr; }
 }
+
+.history-time-fields { display:flex; flex-wrap:wrap; gap:8px; align-items:end; }
+.history-time-fields label { min-width:178px; }
+.history-quick-ranges { display:flex; gap:6px; flex-wrap:wrap; }
+.field-error { color:#ff7272; margin:6px 0 0; }
+.helper-text { color:#8fb6dc; margin:6px 0 0; font-size:12px; }
+.prototype-boundary { margin:12px 0 0; color:#9eb8d2; font-size:11px; line-height:1.55; }
+
+@media (max-width: 900px) {
+  .measurement-trust-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .history-time-fields label { flex:1 1 210px; }
+  .history-quick-ranges { flex:1 1 100%; }
+}
+
+#sys-config .panel-title.row { justify-content:space-between; gap:12px; }
+#sys-config .table-wrap { overflow:auto; }
